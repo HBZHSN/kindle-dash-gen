@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InkSight Premium Panel</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #000;
+      --paper: #fff;
+      --line: 1.5px solid #000;
+      --thin: 1px solid rgba(0, 0, 0, 0.9);
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, "SF Pro Display", "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 1.8vmin;
+    }
+
+    .dashboard {
+      container-type: inline-size;
+      width: min(96vw, calc(96dvh * 0.75));
+      aspect-ratio: 3 / 4;
+      background: var(--paper);
+      border: 2.5px solid var(--ink);
+      display: grid;
+      grid-template-rows: 25% 29% 17% 23% 6%;
+      overflow: hidden;
+    }
+
+    .section {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 60% 40%;
+      border-bottom: var(--line);
+    }
+
+    .time-block {
+      padding: 4% 5%;
+      border-right: var(--line);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+    }
+
+    .date-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2cqw;
+      font-size: 2.05cqw;
+      line-height: 1;
+      font-weight: 620;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .time-main {
+      align-self: center;
+      font-size: 16.1cqw;
+      line-height: 0.8;
+      font-weight: 760;
+      letter-spacing: -0.09em;
+      white-space: nowrap;
+    }
+
+    .time-note {
+      font-size: 1.65cqw;
+      line-height: 1;
+      font-weight: 560;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .weather-block {
+      padding: 7% 9%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+    }
+
+    .weather-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5cqw;
+      min-width: 0;
+    }
+
+    .weather-label {
+      font-size: 1.95cqw;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .weather-icon {
+      width: 8.3cqw;
+      height: 8.3cqw;
+      flex: 0 0 auto;
+    }
+
+    .temperature {
+      align-self: center;
+      font-size: 10.2cqw;
+      line-height: 0.86;
+      font-weight: 760;
+      letter-spacing: -0.06em;
+      white-space: nowrap;
+    }
+
+    .weather-detail {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.9cqw;
+      font-size: 1.62cqw;
+      line-height: 1.18;
+      font-weight: 540;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .market,
+    .focus,
+    .todo-area {
+      padding: 3.2% 4.5%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+    }
+
+    .market,
+    .focus {
+      border-bottom: var(--line);
+    }
+
+    .market { gap: 2.2%; }
+    .focus { gap: 7%; }
+    .todo-area { gap: 4.5%; }
+
+    .section-title-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 2cqw;
+      min-height: 0;
+    }
+
+    .section-title {
+      font-size: 1.95cqw;
+      line-height: 1;
+      font-weight: 720;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .section-rule {
+      height: 1.5px;
+      background: var(--ink);
+      opacity: 0.9;
+    }
+
+    .section-meta {
+      font-size: 1.42cqw;
+      line-height: 1;
+      font-weight: 560;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .quote-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 5.5%;
+      row-gap: 0;
+    }
+
+    .quote-row {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      column-gap: 1.4cqw;
+      border-bottom: var(--thin);
+    }
+
+    .quote-row:nth-last-child(-n + 2) {
+      border-bottom: none;
+    }
+
+    .quote-symbol {
+      min-width: 0;
+      font-size: 2.85cqw;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .quote-price {
+      font-size: 2.2cqw;
+      line-height: 1;
+      font-weight: 620;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .quote-change {
+      min-width: 7.2cqw;
+      text-align: right;
+      font-size: 1.72cqw;
+      line-height: 1;
+      font-weight: 650;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .quote-change.up::before {
+      content: "▲ ";
+    }
+
+    .quote-change.down::before {
+      content: "▼ ";
+    }
+
+    .focus-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4.5%;
+    }
+
+    .usage-card {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .usage-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1cqw;
+      margin-bottom: 2.1cqw;
+    }
+
+    .usage-name {
+      font-size: 2cqw;
+      line-height: 1;
+      font-weight: 650;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .usage-percent {
+      font-size: 4cqw;
+      line-height: 0.9;
+      font-weight: 740;
+      letter-spacing: -0.05em;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .meter {
+      height: 5cqw;
+      border: var(--line);
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 1px;
+      padding: 1px;
+      align-self: end;
+    }
+
+    .meter span {
+      min-width: 0;
+      background: var(--paper);
+    }
+
+    .meter .filled {
+      background: var(--ink);
+    }
+
+    .usage-foot {
+      margin-top: 1.6cqw;
+      font-size: 1.52cqw;
+      line-height: 1;
+      font-weight: 540;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .todo-list {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 5%;
+      row-gap: 0;
+    }
+
+    .task {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 1.45cqw;
+      border-bottom: var(--thin);
+    }
+
+    .task:nth-last-child(-n + 2) {
+      border-bottom: none;
+    }
+
+    .task-index {
+      width: 3.5cqw;
+      height: 3.5cqw;
+      display: grid;
+      place-items: center;
+      background: var(--ink);
+      color: var(--paper);
+      font-size: 1.42cqw;
+      line-height: 1;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .task.done .task-index {
+      background: var(--paper);
+      color: var(--ink);
+      border: var(--line);
+    }
+
+    .task-text {
+      min-width: 0;
+      font-size: 1.95cqw;
+      line-height: 1;
+      font-weight: 560;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .task.done .task-text {
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+    }
+
+    .bottom-strip {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      padding: 0 4.5%;
+      border-top: var(--line);
+      min-height: 0;
+    }
+
+    .signal,
+    .refresh {
+      font-size: 1.48cqw;
+      line-height: 1;
+      font-weight: 540;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .signal {
+      display: flex;
+      align-items: center;
+      gap: 1.1cqw;
+      min-width: 0;
+    }
+
+    .signal-dot {
+      width: 1.15cqw;
+      height: 1.15cqw;
+      background: var(--ink);
+      flex: 0 0 auto;
+    }
+
+    @media (max-aspect-ratio: 3 / 4) {
+      body {
+        padding: 1.2vmin;
+      }
+
+      .dashboard {
+        width: 98vw;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="dashboard" aria-label="Premium information dashboard">
+    <section class="section hero">
+      <div class="time-block">
+        <div class="date-row">
+          <span>May 29, 2026</span>
+          <span>Friday</span>
+        </div>
+        <div class="time-main">21:20</div>
+        <div class="time-note">Asia / Shanghai</div>
+      </div>
+
+      <div class="weather-block">
+        <div class="weather-top">
+          <div class="weather-label">Hangzhou</div>
+          <svg class="weather-icon" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M24 68h44c10.6 0 19-7.8 19-17.5 0-8.7-6.8-16.1-15.9-17.2C68.2 23.4 59.5 16 49 16 37.3 16 27.8 24.7 26.8 35.8 17.2 37.5 10 45.7 10 55.6 10 62.5 15.8 68 24 68Z" stroke="#000" stroke-width="5" stroke-linejoin="round"/>
+            <path d="M27 78h40" stroke="#000" stroke-width="5" stroke-linecap="square"/>
+          </svg>
+        </div>
+        <div class="temperature">24°</div>
+        <div class="weather-detail">
+          <span>Cloudy · 25 / 18°</span>
+          <span>Humidity 68%</span>
+          <span>East Wind L2</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section market">
+      <div class="section-title-row">
+        <div class="section-title">Markets</div>
+        <div class="section-rule"></div>
+        <div class="section-meta">8 Symbols</div>
+      </div>
+
+      <div class="quote-grid">
+        <div class="quote-row">
+          <div class="quote-symbol">NDX</div>
+          <div class="quote-price">19,328.65</div>
+          <div class="quote-change up">0.67%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">SSEC</div>
+          <div class="quote-price">3,334.36</div>
+          <div class="quote-change up">0.38%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">BTC-USD</div>
+          <div class="quote-price">67,892.43</div>
+          <div class="quote-change down">1.80%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">CHINEXT</div>
+          <div class="quote-price">2,064.28</div>
+          <div class="quote-change up">0.65%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">ETH-USD</div>
+          <div class="quote-price">3,782.10</div>
+          <div class="quote-change down">1.11%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">AU</div>
+          <div class="quote-price">2,335.41</div>
+          <div class="quote-change up">0.80%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">USDCNH</div>
+          <div class="quote-price">7.2431</div>
+          <div class="quote-change up">0.09%</div>
+        </div>
+        <div class="quote-row">
+          <div class="quote-symbol">WTI</div>
+          <div class="quote-price">79.18</div>
+          <div class="quote-change down">0.55%</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section focus">
+      <div class="section-title-row">
+        <div class="section-title">Codex Usage</div>
+        <div class="section-rule"></div>
+        <div class="section-meta">Current</div>
+      </div>
+
+      <div class="focus-grid">
+        <div class="usage-card">
+          <div class="usage-head">
+            <div class="usage-name">5H Window</div>
+            <div class="usage-percent">38%</div>
+          </div>
+          <div class="meter" aria-label="38 percent used">
+            <span class="filled"></span><span class="filled"></span><span class="filled"></span><span class="filled"></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="usage-foot">Moderate activity</div>
+        </div>
+
+        <div class="usage-card">
+          <div class="usage-head">
+            <div class="usage-name">Weekly</div>
+            <div class="usage-percent">62%</div>
+          </div>
+          <div class="meter" aria-label="62 percent used">
+            <span class="filled"></span><span class="filled"></span><span class="filled"></span><span class="filled"></span><span class="filled"></span><span class="filled"></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="usage-foot">Keep an eye on it</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section todo-area">
+      <div class="section-title-row">
+        <div class="section-title">Today</div>
+        <div class="section-rule"></div>
+        <div class="section-meta">6 Tasks</div>
+      </div>
+
+      <div class="todo-list">
+        <div class="task done">
+          <div class="task-index">1</div>
+          <div class="task-text">Review overnight logs</div>
+        </div>
+        <div class="task done">
+          <div class="task-index">2</div>
+          <div class="task-text">Sync tiger branch</div>
+        </div>
+        <div class="task">
+          <div class="task-index">3</div>
+          <div class="task-text">Check market snapshot</div>
+        </div>
+        <div class="task">
+          <div class="task-index">4</div>
+          <div class="task-text">Prepare weekly note</div>
+        </div>
+        <div class="task">
+          <div class="task-index">5</div>
+          <div class="task-text">Walk the dog</div>
+        </div>
+        <div class="task">
+          <div class="task-index">6</div>
+          <div class="task-text">Read for 30 minutes</div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bottom-strip">
+      <div class="signal"><span class="signal-dot"></span> E-ink optimized · monochrome</div>
+      <div class="refresh">Refresh 21:20</div>
+    </footer>
+  </main>
+</body>
+</html>

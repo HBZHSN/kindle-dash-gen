@@ -1,0 +1,9 @@
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+
+config.yaml
+dash.png
+dash_check.png
+*.log

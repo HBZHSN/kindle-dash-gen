@@ -1,0 +1,41 @@
+server:
+  host: "0.0.0.0"
+  port: 5678
+
+output:
+  path: "dash.png"
+
+cache:
+  data_path: ".cache/dashboard-data.json"
+
+schedule:
+  enabled: true
+  cron: "*/15 * * * *"
+  timezone: "Asia/Shanghai"
+
+market:
+  symbols:
+    - "600519.SS"
+    - "000001.SZ"
+    - "AAPL"
+    - "MSFT"
+    - "BTC-USD"
+    - "ETH-USD"
+    - "^NDX"
+    - "GC=F"
+
+weather:
+  location: "Shanghai"
+  latitude:
+  longitude:
+
+obsidian:
+  path: ""
+  projects_dir: "1-Projects"
+  archive_dir: "4-Archive"
+  max_items: 8
+
+codex:
+  token: ""
+  usage_url: "https://chatgpt.com/backend-api/wham/usage"
+  timeout_seconds: 15
