@@ -92,7 +92,12 @@ def _fetch_market_quote(symbol: str) -> MarketQuote:
         if closes.empty:
             raise ValueError("no close prices")
         last = float(closes.iloc[-1])
-        prev = float(closes.iloc[-2]) if len(closes) > 1 else last
+        if len(closes) > 1:
+            prev = float(closes.iloc[-2])
+        else:
+            prev = _prev_close_from_info(symbol, last)
+            if prev == last:
+                logger.info("Market quote single-row fallback: symbol=%s no prev close in info", symbol)
         pct = 0.0 if prev == 0 else ((last - prev) / prev) * 100
         quote = MarketQuote(
             symbol=ascii_text(symbol, "SYM"),
@@ -105,6 +110,17 @@ def _fetch_market_quote(symbol: str) -> MarketQuote:
         quote = MarketQuote(symbol=ascii_text(symbol, "SYM"), price="--", change="--", status=ascii_text(exc, "Failed"))
         logger.warning("Market quote failed: symbol=%s error=%s", quote.symbol, quote.status)
         return quote
+
+
+def _prev_close_from_info(symbol: str, fallback: float) -> float:
+    try:
+        info = yf.Ticker(symbol).fast_info
+        prev = getattr(info, "previous_close", None) or getattr(info, "regular_market_previous_close", None)
+        if prev is not None and float(prev) > 0:
+            return float(prev)
+    except Exception:
+        pass
+    return fallback
 
 
 def fetch_market_quotes(symbols: list[str]) -> list[MarketQuote]:
