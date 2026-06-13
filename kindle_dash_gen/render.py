@@ -16,10 +16,10 @@ from .text import ascii_text
 WIDTH = 1080
 HEIGHT = 1440
 
-DASH_X = 22
-DASH_Y = 29
-DASH_W = 1036
-DASH_H = 1381
+DASH_X = 8
+DASH_Y = 8
+DASH_W = 1064
+DASH_H = 1424
 INK = 0
 PAPER = 255
 MID = 70
@@ -196,26 +196,23 @@ def _load_weather_icon(code: int | None, size: int = 78) -> Image.Image | None:
 def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data: DashboardData) -> None:
     x1, y1, x2, y2 = rect
     split = x1 + int((x2 - x1) * 0.60)
-    draw.line((split, y1, split, y2), fill=INK, width=LINE_W)
 
     time_x = x1 + 52
     time_y = y1 + 42
-    date_font = _font(21, bold=True)
-    note_font = _font(17)
+    date_font = _font(26, bold=True)
+    note_font = _font(20)
     time_font = _font(158, bold=True)
     date_left = data.generated_at.strftime("%b %d, %Y").upper()
     date_right = data.generated_at.strftime("%A").upper()
-    draw.text((time_x, time_y), date_left, fill=INK, font=date_font)
-    right_w = _text_w(draw, date_right, date_font)
-    draw.text((split - 52 - right_w, time_y), date_right, fill=INK, font=date_font)
-    draw.text((time_x - 6, y1 + 132), data.generated_at.strftime("%H:%M"), fill=INK, font=time_font)
-    draw.text((time_x, y2 - 43), "ASIA / SHANGHAI", fill=INK, font=note_font)
+    draw.text((time_x, time_y), f"{date_left}  {date_right}", fill=INK, font=date_font)
+    draw.text((time_x - 6, y1 + 88), data.generated_at.strftime("%H:%M"), fill=INK, font=time_font)
+    draw.text((time_x, y2 - 25), "ASIA / SHANGHAI", fill=INK, font=note_font)
 
     weather_x = split + 38
     weather_right = x2 - 38
-    label_font = _font(20, bold=True)
+    label_font = _font(22, bold=True)
     temp_font = _font(102, bold=True)
-    detail_font = _font(17)
+    detail_font = _font(20)
     label = ascii_text(data.weather.title, "WEATHER").upper()
     _draw_fit(draw, (weather_x, y1 + 53), label, label_font, weather_right - weather_x - 94)
     icon_size = 78
@@ -229,10 +226,12 @@ def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data:
 
     temp = ascii_text(data.weather.temperature, "-- C")
     temp = re.sub(r"\s*C$", " C", temp).strip()
-    _draw_fit(draw, (weather_x, y1 + 146), temp, temp_font, weather_right - weather_x)
+    _draw_fit(draw, (weather_x, y1 + 100), temp, temp_font, weather_right - weather_x)
 
-    detail_y = y2 - 86
-    details = [data.weather.status if data.weather.status != "OK" else "LIVE WEATHER", data.weather.wind, "E-INK READY"]
+    detail_y = y2 - 55
+    details: list[str] = [data.weather.wind]
+    if data.weather.status != "OK":
+        details.append(data.weather.status)
     for detail in details:
         _draw_fit(draw, (weather_x, detail_y), ascii_text(detail).upper(), detail_font, weather_right - weather_x, fill=INK)
         detail_y += 24
@@ -246,9 +245,9 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
     row_h = max(42, (y2 - row_top - 32) // 4)
     gap = 54
     col_w = ((x2 - x1) - 92 - gap) // 2
-    symbol_font = _font(30, bold=True)
-    price_font = _font(23)
-    change_font = _font(18, bold=True)
+    symbol_font = _font(34, bold=True)
+    price_font = _font(26)
+    change_font = _font(26, bold=True)
 
     for index, quote in enumerate(rows):
         col = index % 2
@@ -261,10 +260,10 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
         symbol = ascii_text(quote.symbol, "SYM")
         price = ascii_text(quote.price, "--")
         change = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
-        change_w = 82
+        change_w = 100
         price_w = 128
         baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
-        _draw_fit(draw, (rx, baseline), symbol, symbol_font, col_w - price_w - change_w - 26)
+        _draw_fit(draw, (rx, baseline), symbol, symbol_font, col_w - price_w - change_w - 14)
         _draw_fit(draw, (rx + col_w - price_w - change_w, baseline + 4), price, price_font, price_w)
         _draw_fit(draw, (rx + col_w, baseline + 8), change, change_font, change_w, anchor="ra")
 
@@ -316,9 +315,9 @@ def _draw_usage_card(
     status: str,
 ) -> None:
     x1, y1, x2, y2 = rect
-    name_font = _font(21, bold=True)
-    pct_font = _font(42, bold=True)
-    foot_font = _font(16)
+    name_font = _font(24, bold=True)
+    pct_font = _font(48, bold=True)
+    foot_font = _font(18)
     percent = _usage_percent(value)
     draw.text((x1, y1), ascii_text(name).upper(), fill=INK, font=name_font)
     pct_text = f"{percent}%"
@@ -357,8 +356,8 @@ def _draw_todos(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], todo
     row_h = max(38, (y2 - row_top - 30) // 3)
     gap = 52
     col_w = ((x2 - x1) - 92 - gap) // 2
-    text_font = _font(20, cjk=True)
-    index_font = _font(15, bold=True)
+    text_font = _font(24, cjk=True)
+    index_font = _font(17, bold=True)
 
     for index, (item, done) in enumerate(items, start=1):
         col = (index - 1) % 2
@@ -409,9 +408,8 @@ def render_dashboard(data: DashboardData, output: str | Path) -> Path:
     y1 = DASH_Y
     x2 = DASH_X + DASH_W
     y2 = DASH_Y + DASH_H
-    draw.rectangle((x1, y1, x2, y2), outline=INK, width=3)
 
-    heights = [345, 401, 235, 318, 82]
+    heights = [280, 484, 282, 378]
     top = y1
     sections: list[tuple[int, int, int, int]] = []
     for height in heights:
@@ -425,7 +423,6 @@ def render_dashboard(data: DashboardData, output: str | Path) -> Path:
     _draw_market(draw, sections[1], data.market)
     _draw_focus(draw, sections[2], data.codex)
     _draw_todos(draw, sections[3], data.todos)
-    _draw_footer(draw, sections[4], data.generated_at)
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
