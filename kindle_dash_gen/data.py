@@ -30,6 +30,7 @@ class WeatherReport:
     title: str
     temperature: str
     wind: str
+    weather_code: int | None = None
     status: str = "OK"
 
 
@@ -155,7 +156,7 @@ def fetch_weather(config: dict[str, Any]) -> WeatherReport:
             params={
                 "latitude": latitude,
                 "longitude": longitude,
-                "current": "temperature_2m,wind_speed_10m",
+                "current": "temperature_2m,wind_speed_10m,weather_code",
                 "timezone": "auto",
             },
             timeout=10,
@@ -164,16 +165,19 @@ def fetch_weather(config: dict[str, Any]) -> WeatherReport:
         current = weather.json().get("current") or {}
         temp = current.get("temperature_2m")
         wind = current.get("wind_speed_10m")
+        code = current.get("weather_code")
         report = WeatherReport(
             title=location,
             temperature=f"{float(temp):.1f} C" if temp is not None else "-- C",
             wind=f"Wind {float(wind):.1f} km/h" if wind is not None else "Wind --",
+            weather_code=int(code) if code is not None else None,
         )
         logger.info(
-            "Weather fetched: title=%s temperature=%s wind=%s",
+            "Weather fetched: title=%s temperature=%s wind=%s code=%s",
             report.title,
             report.temperature,
             report.wind,
+            report.weather_code,
         )
         return report
     except Exception as exc:

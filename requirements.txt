@@ -3,4 +3,5 @@ Flask==3.0.3
 Pillow==10.4.0
 PyYAML==6.0.2
 requests==2.32.3
+resvg-py>=0.3.0
 yfinance==1.4.1

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import io
 import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .data import CodexUsage, MarketQuote, TodoSummary, WeatherReport
 from .text import ascii_text
@@ -24,6 +25,40 @@ PAPER = 255
 MID = 70
 LIGHT = 180
 LINE_W = 2
+
+IMG_DIR = Path(__file__).resolve().parent.parent / "img"
+WEATHER_ICON_DIR = IMG_DIR / "weather"
+
+WMO_TO_ICON: dict[int, int] = {
+    0: 1,
+    1: 2,
+    2: 2,
+    3: 3,
+    45: 19,
+    48: 19,
+    51: 8,
+    53: 9,
+    55: 9,
+    56: 7,
+    57: 7,
+    61: 8,
+    63: 9,
+    65: 10,
+    66: 20,
+    67: 20,
+    71: 15,
+    73: 16,
+    75: 17,
+    77: 15,
+    80: 4,
+    81: 4,
+    82: 10,
+    85: 14,
+    86: 14,
+    95: 5,
+    96: 6,
+    99: 6,
+}
 
 
 @dataclass
@@ -137,6 +172,27 @@ def _draw_cloud_icon(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int])
     draw.line((x1 + int(w * 0.25), y2 - 6, x2 - int(w * 0.20), y2 - 6), fill=INK, width=stroke)
 
 
+def _load_weather_icon(code: int | None, size: int = 78) -> Image.Image | None:
+    if code is None:
+        return None
+    icon_num = WMO_TO_ICON.get(code)
+    if icon_num is None:
+        return None
+    matches = list(WEATHER_ICON_DIR.glob(f"weather_{icon_num}*.svg"))
+    if not matches:
+        return None
+    svg_path = matches[0]
+    try:
+        import resvg_py
+
+        svg_str = svg_path.read_text(encoding="utf-8")
+        png_bytes = resvg_py.svg_to_bytes(svg_str, width=size * 2, height=size * 2, background="#ffffff")
+        img = Image.open(io.BytesIO(png_bytes)).convert("L").resize((size, size), Image.LANCZOS)
+        return img
+    except Exception:
+        return None
+
+
 def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data: DashboardData) -> None:
     x1, y1, x2, y2 = rect
     split = x1 + int((x2 - x1) * 0.60)
@@ -162,7 +218,14 @@ def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data:
     detail_font = _font(17)
     label = ascii_text(data.weather.title, "WEATHER").upper()
     _draw_fit(draw, (weather_x, y1 + 53), label, label_font, weather_right - weather_x - 94)
-    _draw_cloud_icon(draw, (weather_right - 78, y1 + 38, weather_right, y1 + 116))
+    icon_size = 78
+    icon_rect = (weather_right - icon_size, y1 + 38, weather_right, y1 + 38 + icon_size)
+    weather_icon = _load_weather_icon(data.weather.weather_code, size=icon_size)
+    if weather_icon is not None:
+        inverted = ImageOps.invert(weather_icon)
+        draw.bitmap((icon_rect[0], icon_rect[1]), inverted, fill=INK)
+    else:
+        _draw_cloud_icon(draw, icon_rect)
 
     temp = ascii_text(data.weather.temperature, "-- C")
     temp = re.sub(r"\s*C$", " C", temp).strip()
