@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, time, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 import requests
 import yfinance as yf
 
+from .codex_token import inspect_token, normalize_token
 from .text import ascii_text
 
 
@@ -23,6 +25,8 @@ class MarketQuote:
     price: str
     change: str
     status: str = "OK"
+    intraday: list[float] = field(default_factory=list)
+    is_closed: bool = False
 
 
 @dataclass
@@ -44,6 +48,9 @@ class CodexUsage:
     primary_e: int = 0
     secondary_t: int = 0
     secondary_e: int = 0
+    token_expires_at: int | None = None
+    token_expiring_soon: bool = False
+    token_expired: bool = False
 
 
 @dataclass
@@ -77,38 +84,95 @@ def _close_prices(data: Any, symbol: str) -> Any:
     raise ValueError("no close prices")
 
 
+def _positive_number(value: object) -> float | None:
+    try:
+        number = float(value)
+        return number if math.isfinite(number) and number > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _market_is_closed(metadata: dict[str, Any], now: datetime | None = None) -> bool:
+    state = str(metadata.get("marketState") or "").strip().upper()
+    if state in {"POST", "POSTPOST", "CLOSED"}:
+        return True
+    if state in {"PRE", "PREPRE", "REGULAR"}:
+        return False
+
+    regular = (metadata.get("currentTradingPeriod") or {}).get("regular") or {}
+    end = regular.get("end")
+    if end is None:
+        return False
+    try:
+        if isinstance(end, (int, float)):
+            end_time = datetime.fromtimestamp(end, timezone.utc)
+        elif isinstance(end, datetime):
+            end_time = end
+        else:
+            end_time = datetime.fromisoformat(str(end))
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+        current_time = now or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        return current_time >= end_time
+    except (TypeError, ValueError, OSError, OverflowError):
+        return False
+
+
+def _quote_from_intraday(symbol: str, closes: Any, metadata: dict[str, Any]) -> MarketQuote:
+    prices = [float(value) for value in closes.tolist() if math.isfinite(float(value))]
+    if not prices:
+        raise ValueError("no intraday close prices")
+
+    last = _positive_number(metadata.get("regularMarketPrice")) or prices[-1]
+    prev = (
+        _positive_number(metadata.get("previousClose"))
+        or _positive_number(metadata.get("chartPreviousClose"))
+        or _positive_number(metadata.get("regularMarketPreviousClose"))
+        or _prev_close_from_info(symbol, last)
+    )
+    if prev <= 0:
+        prev = last
+
+    # Yahoo can publish an official index/futures close that differs slightly
+    # from the final one-minute bar. Use it as the curve endpoint so the chart
+    # and displayed quote share the exact same current value and baseline.
+    prices[-1] = last
+    intraday = [round(((price - prev) / prev) * 100, 4) for price in prices]
+    pct = ((last - prev) / prev) * 100
+    return MarketQuote(
+        symbol=ascii_text(symbol, "SYM"),
+        price=f"{last:,.2f}",
+        change=f"{pct:+.2f}%",
+        intraday=intraday,
+        is_closed=_market_is_closed(metadata),
+    )
+
+
 def _fetch_market_quote(symbol: str) -> MarketQuote:
     try:
+        ticker = yf.Ticker(symbol)
         with _quiet_yfinance_logs():
-            data = yf.download(
-                tickers=symbol,
-                period="2d",
-                interval="1d",
-                group_by="ticker",
-                progress=False,
-                threads=False,
+            data = ticker.history(
+                period="1d",
+                interval="1m",
                 auto_adjust=False,
-                timeout=10,
+                actions=False,
+                timeout=15,
             )
         if data is None or data.empty:
             raise ValueError("no market data")
         closes = _close_prices(data, symbol)
-        if closes.empty:
-            raise ValueError("no close prices")
-        last = float(closes.iloc[-1])
-        if len(closes) > 1:
-            prev = float(closes.iloc[-2])
-        else:
-            prev = _prev_close_from_info(symbol, last)
-            if prev == last:
-                logger.info("Market quote single-row fallback: symbol=%s no prev close in info", symbol)
-        pct = 0.0 if prev == 0 else ((last - prev) / prev) * 100
-        quote = MarketQuote(
-            symbol=ascii_text(symbol, "SYM"),
-            price=f"{last:,.2f}",
-            change=f"{pct:+.2f}%",
+        quote = _quote_from_intraday(symbol, closes, ticker.history_metadata or {})
+        logger.info(
+            "Market quote fetched: symbol=%s price=%s change=%s intraday_points=%d closed=%s",
+            quote.symbol,
+            quote.price,
+            quote.change,
+            len(quote.intraday),
+            quote.is_closed,
         )
-        logger.info("Market quote fetched: symbol=%s price=%s change=%s", quote.symbol, quote.price, quote.change)
         return quote
     except Exception as exc:
         quote = MarketQuote(symbol=ascii_text(symbol, "SYM"), price="--", change="--", status=ascii_text(exc, "Failed"))
@@ -119,7 +183,7 @@ def _fetch_market_quote(symbol: str) -> MarketQuote:
 def _prev_close_from_info(symbol: str, fallback: float) -> float:
     try:
         info = yf.Ticker(symbol).fast_info
-        prev = getattr(info, "previous_close", None) or getattr(info, "regular_market_previous_close", None)
+        prev = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
         if prev is not None and float(prev) > 0:
             return float(prev)
     except Exception:
@@ -315,10 +379,20 @@ def _window_progress(window: dict[str, Any] | None) -> tuple[int, int]:
 
 
 def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
-    token = config.get("token") or ""
+    try:
+        token = normalize_token(config.get("token"))
+    except ValueError as exc:
+        logger.warning("Codex usage skipped: invalid token: %s", exc)
+        return CodexUsage(primary="Invalid token", secondary="N/A", allowed="N/A", status="Invalid token")
+    token_info = inspect_token(token)
+    token_fields = {
+        "token_expires_at": token_info["expires_at"],
+        "token_expiring_soon": token_info["expiring_soon"],
+        "token_expired": token_info["expired"],
+    }
     if not token:
         logger.info("Codex usage skipped: no token configured")
-        return CodexUsage(primary="No token", secondary="N/A", allowed="N/A", status="Skipped")
+        return CodexUsage(primary="No token", secondary="N/A", allowed="N/A", status="Skipped", **token_fields)
 
     try:
         response = requests.get(
@@ -346,6 +420,7 @@ def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
             primary_e=primary_e,
             secondary_t=secondary_t,
             secondary_e=secondary_e,
+            **token_fields,
         )
         logger.info(
             "Codex usage fetched: primary=%s secondary=%s allowed=%s",
@@ -355,7 +430,13 @@ def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
         )
         return usage
     except Exception as exc:
-        usage = CodexUsage(primary="Unavailable", secondary="Unavailable", allowed="N/A", status=ascii_text(exc, "Failed"))
+        usage = CodexUsage(
+            primary="Unavailable",
+            secondary="Unavailable",
+            allowed="N/A",
+            status=ascii_text(exc, "Failed"),
+            **token_fields,
+        )
         logger.warning("Codex usage failed: error=%s", usage.status)
         return usage
 

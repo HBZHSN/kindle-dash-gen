@@ -172,6 +172,21 @@ def _draw_cloud_icon(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int])
     draw.line((x1 + int(w * 0.25), y2 - 6, x2 - int(w * 0.20), y2 - 6), fill=INK, width=stroke)
 
 
+def _draw_clock_icon(draw: ImageDraw.ImageDraw, center: tuple[int, int], size: int = 28) -> None:
+    """Draw a high-contrast clock indicator suitable for an e-ink display."""
+    cx, cy = center
+    radius = size // 2
+    stroke = max(2, size // 10)
+    draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline=INK, width=stroke)
+    draw.line((cx, cy, cx, cy - radius // 2), fill=INK, width=stroke)
+    draw.line((cx, cy, cx + radius // 2, cy + radius // 3), fill=INK, width=stroke)
+    draw.ellipse((cx - stroke, cy - stroke, cx + stroke, cy + stroke), fill=INK)
+
+
+def _token_needs_attention(codex: CodexUsage) -> bool:
+    return codex.token_expiring_soon or codex.token_expired
+
+
 def _load_weather_icon(code: int | None, size: int = 78) -> Image.Image | None:
     if code is None:
         return None
@@ -263,9 +278,32 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
         price = _truncate(draw, price_raw, price_font, price_max)
         price_px = _text_w(draw, price, price_font)
         baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
-        _draw_fit(draw, (rx, baseline), symbol, symbol_font, col_w - price_px - change_px - price_gap - 10)
+        _draw_market_symbol(
+            draw,
+            (rx, baseline),
+            symbol,
+            symbol_font,
+            col_w - price_px - change_px - price_gap - 10,
+            quote.is_closed,
+        )
         draw.text((rx + col_w - change_px - price_gap, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
         draw.text((rx + col_w, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
+
+
+def _draw_market_symbol(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    symbol: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+    is_closed: bool,
+) -> None:
+    x, y = xy
+    _draw_fit(draw, xy, symbol, font, max_width)
+    if is_closed:
+        marker = "*"
+        marker_gap = 5
+        draw.text((x - _text_w(draw, marker, font) - marker_gap, y), marker, font=font, fill=INK)
 
 
 def _usage_percent(text: str) -> int:
@@ -355,6 +393,7 @@ def _draw_usage_card(
     status: str,
     t_progress: int = 0,
     e_progress: int = 0,
+    token_attention: bool = False,
 ) -> None:
     x1, y1, x2, y2 = rect
     w = x2 - x1
@@ -365,7 +404,16 @@ def _draw_usage_card(
     percent = _usage_percent(value)
     pct_text = f"{percent}%"
     pct_h = _text_h(draw, pct_text, pct_font)
-    draw.text((cx, y1 + 10), ascii_text(name).upper(), fill=INK, font=name_font, anchor="mt")
+    name_text = ascii_text(name).upper()
+    name_w = _text_w(draw, name_text, name_font)
+    icon_size = 30
+    icon_gap = 10
+    group_w = name_w + (icon_gap + icon_size if token_attention else 0)
+    group_left = cx - group_w // 2
+    draw.text((group_left + name_w // 2, y1 + 10), name_text, fill=INK, font=name_font, anchor="mt")
+    if token_attention:
+        icon_cx = group_left + name_w + icon_gap + icon_size // 2
+        _draw_clock_icon(draw, (icon_cx, y1 + 10 + icon_size // 2), icon_size)
     pct_y = y1 + 88
     draw.text((cx, pct_y), pct_text, fill=INK, font=pct_font, anchor="mt")
     bar_w = min(w - 40, 520)
@@ -383,7 +431,16 @@ def _draw_focus(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], code
     card_w = ((x2 - x1) - 92 - gap) // 2
     top = y1 + 32
     bottom = y2 - 8
-    _draw_usage_card(draw, (x1 + 46, top, x1 + 46 + card_w, bottom), "5H", codex.primary, codex.status, codex.primary_t, codex.primary_e)
+    _draw_usage_card(
+        draw,
+        (x1 + 46, top, x1 + 46 + card_w, bottom),
+        "5H",
+        codex.primary,
+        codex.status,
+        codex.primary_t,
+        codex.primary_e,
+        _token_needs_attention(codex),
+    )
     _draw_usage_card(draw, (x1 + 46 + card_w + gap, top, x2 - 46, bottom), "Weekly", codex.secondary, codex.status, codex.secondary_t, codex.secondary_e)
 
 
@@ -426,7 +483,8 @@ def _draw_weather_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int
     temp_y = row_y
     draw.text((temp_x, temp_y), temp_str, fill=INK, font=temp_font, anchor="ra")
     icon_x = row_start + temp_w + row_gap
-    icon_y = temp_y + (temp_h - icon_size) // 2
+    temp_box = draw.textbbox((temp_x, temp_y), temp_str, font=temp_font, anchor="ra")
+    icon_y = (temp_box[1] + temp_box[3] - icon_size) // 2
     icon_rect = (icon_x, icon_y, icon_x + icon_size, icon_y + icon_size)
     weather_icon = _load_weather_icon(data.weather.weather_code, size=icon_size)
     if weather_icon is not None:
@@ -446,6 +504,7 @@ def _draw_usage_card_compact(
     status: str,
     t_progress: int = 0,
     e_progress: int = 0,
+    token_attention: bool = False,
 ) -> None:
     x1, y1, x2, y2 = rect
     w = x2 - x1
@@ -456,7 +515,16 @@ def _draw_usage_card_compact(
     percent = _usage_percent(value)
     pct_text = f"{percent}%"
     pct_h = _text_h(draw, pct_text, pct_font)
-    draw.text((cx, y1 + 8), ascii_text(name).upper(), fill=INK, font=name_font, anchor="mt")
+    name_text = ascii_text(name).upper()
+    name_w = _text_w(draw, name_text, name_font)
+    icon_size = 24
+    icon_gap = 9
+    group_w = name_w + (icon_gap + icon_size if token_attention else 0)
+    group_left = cx - group_w // 2
+    draw.text((group_left + name_w // 2, y1 + 8), name_text, fill=INK, font=name_font, anchor="mt")
+    if token_attention:
+        icon_cx = group_left + name_w + icon_gap + icon_size // 2
+        _draw_clock_icon(draw, (icon_cx, y1 + 8 + icon_size // 2), icon_size)
     pct_y = y1 + 48
     draw.text((cx, pct_y), pct_text, fill=INK, font=pct_font, anchor="mt")
     bar_w = min(w - 40, 400)
@@ -485,7 +553,16 @@ def _draw_focus_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, 
     top_pad = max(0, (card_h - content_h) // 2)
 
     top_rect = (x1, y1 + top_pad, x2, y2)
-    _draw_usage_card_compact(draw, top_rect, "5H", codex.primary, codex.status, codex.primary_t, codex.primary_e)
+    _draw_usage_card_compact(
+        draw,
+        top_rect,
+        "5H",
+        codex.primary,
+        codex.status,
+        codex.primary_t,
+        codex.primary_e,
+        _token_needs_attention(codex),
+    )
 
     div_y = y1 + card_h + gap // 2
     draw.line((x1, div_y, x2, div_y), fill=LIGHT, width=1)
@@ -495,17 +572,60 @@ def _draw_focus_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, 
     _draw_usage_card_compact(draw, bot_rect, "Weekly", codex.secondary, codex.status, codex.secondary_t, codex.secondary_e)
 
 
+def _draw_intraday_curve(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[int, int, int, int],
+    values: list[float],
+) -> None:
+    x1, y1, x2, y2 = rect
+    if x2 <= x1 or y2 <= y1:
+        return
+    if len(values) < 2:
+        cy = (y1 + y2) // 2
+        draw.line((x1, cy, x2, cy), fill=LIGHT, width=1)
+        return
+
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    if len(finite) < 2:
+        return
+    low = min(min(finite), 0.0)
+    high = max(max(finite), 0.0)
+    if high == low:
+        high += 0.5
+        low -= 0.5
+    padding = max((high - low) * 0.08, 0.02)
+    low -= padding
+    high += padding
+
+    def point(index: int, value: float) -> tuple[int, int]:
+        px = x1 + round(index * (x2 - x1) / (len(finite) - 1))
+        py = y2 - round((value - low) * (y2 - y1) / (high - low))
+        return px, py
+
+    zero_y = point(0, 0.0)[1]
+    draw.line((x1, zero_y, x2, zero_y), fill=LIGHT, width=3)
+    points = [point(index, value) for index, value in enumerate(finite)]
+    draw.line(points, fill=INK, width=3, joint="curve")
+
+
 def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quotes: list[MarketQuote]) -> None:
     x1, y1, x2, y2 = rect
-    w = x2 - x1
     rows = quotes[:8] or [MarketQuote(symbol="No symbols", price="--", change="--")]
     row_top = y1 + 8
     row_h = max(56, (y2 - row_top - 48) // len(rows))
-    symbol_font = _font(36, bold=True)
-    price_font = _font(28)
+    symbol_font = _font(31, bold=True)
+    price_font = _font(26)
     change_font = _font(28, bold=True)
     right_edge = x2 - 46
-    change_w = 130
+    change_w = 124
+    price_w = 126
+    symbol_w = 188
+    col_gap = 18
+    content_left = x1 + 46
+    change_left = right_edge - change_w
+    price_left = change_left - col_gap - price_w
+    chart_left = content_left + symbol_w + col_gap
+    chart_right = price_left - col_gap
     for index, quote in enumerate(rows):
         ry = row_top + index * row_h
         if index < len(rows) - 1:
@@ -514,14 +634,13 @@ def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int,
         price_raw = ascii_text(quote.price, "--")
         change_raw = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
         change = _truncate(draw, change_raw, change_font, change_w)
-        change_px = _text_w(draw, change, change_font)
-        price_gap = 16
-        price_max = w - 92 - change_px - price_gap
-        price = _truncate(draw, price_raw, price_font, price_max)
-        price_px = _text_w(draw, price, price_font)
+        price = _truncate(draw, price_raw, price_font, price_w)
         baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
-        _draw_fit(draw, (x1 + 46, baseline), symbol, symbol_font, w - 92 - price_px - change_px - price_gap - 10)
-        draw.text((right_edge - change_px - price_gap, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
+        _draw_market_symbol(draw, (content_left, baseline), symbol, symbol_font, symbol_w, quote.is_closed)
+        chart_h = min(78, row_h - 34)
+        chart_top = ry + (row_h - chart_h) // 2
+        _draw_intraday_curve(draw, (chart_left, chart_top, chart_right, chart_top + chart_h), quote.intraday)
+        draw.text((price_left + price_w, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
         draw.text((right_edge, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
 
 
@@ -644,11 +763,13 @@ def render_dashboard(data: DashboardData, output: str | Path, orientation: str =
             top += height
 
         divider_font = _font(26, bold=True)
-        divider_labels = ["CODEX", "MARKETS"]
+        divider_labels = [None, "MARKETS"]
         for i, (_, _, _, section_bottom) in enumerate(sections[:-1]):
             label = divider_labels[i]
             line_y = section_bottom
             draw.line((x1, line_y, x2, line_y), fill=INK, width=LINE_W)
+            if label is None:
+                continue
             label_h = _text_h(draw, label, divider_font)
             label_w = _text_w(draw, label, divider_font)
             pad = 14

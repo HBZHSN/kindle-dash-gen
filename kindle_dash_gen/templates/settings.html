@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kindle Dashboard 配置</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink:#171814; --muted:#6d7067; --line:#d8d9d1; --paper:#f3f3ed;
+      --card:#fff; --accent:#20211d; --soft:#ecece5; --good:#247143;
+      --warn:#9a6508; --bad:#a12e2e; --radius:14px;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    button,input,select,textarea { font:inherit; }
+    button { border:1px solid var(--ink); border-radius:9px; padding:10px 15px; background:#fff; color:var(--ink); font-weight:650; cursor:pointer; }
+    button:hover:not(:disabled) { background:var(--soft); }
+    button.primary { background:var(--accent); color:#fff; }
+    button.primary:hover:not(:disabled) { background:#3a3b35; }
+    button:disabled { cursor:not-allowed; opacity:.45; }
+    .shell { width:min(1500px,calc(100% - 36px)); margin:34px auto 54px; }
+    header { display:flex; align-items:end; justify-content:space-between; gap:24px; margin-bottom:22px; }
+    .eyebrow { color:var(--muted); font-size:12px; font-weight:750; letter-spacing:.14em; }
+    h1 { margin:2px 0 0; font-size:clamp(27px,4vw,42px); line-height:1.1; letter-spacing:-.04em; }
+    header a { color:var(--ink); text-underline-offset:4px; }
+    .layout { display:grid; grid-template-columns:minmax(500px,720px) minmax(380px,1fr); align-items:start; gap:22px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 8px 30px #1111; }
+    .form-panel { overflow:hidden; }
+    .section { padding:23px 25px 25px; border-bottom:1px solid var(--line); }
+    .section:last-of-type { border-bottom:0; }
+    .section-head { display:flex; justify-content:space-between; align-items:baseline; gap:18px; margin-bottom:17px; }
+    h2 { margin:0; font-size:17px; letter-spacing:-.01em; }
+    .section-note,.hint { color:var(--muted); font-size:12px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
+    .field.full { grid-column:1/-1; }
+    label { display:block; margin-bottom:6px; font-size:13px; font-weight:700; }
+    input,select,textarea { width:100%; border:1px solid #b8bab1; border-radius:8px; padding:9px 11px; color:var(--ink); background:#fff; }
+    input:focus,select:focus,textarea:focus { outline:3px solid #20211d1c; border-color:#44463e; }
+    textarea { min-height:135px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; line-height:1.55; }
+    input[type="password"] { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .inline { display:flex; gap:8px; }
+    .inline input { min-width:0; }
+    .switch-row { display:flex; align-items:center; min-height:41px; gap:10px; }
+    .switch-row input { width:18px; height:18px; accent-color:var(--ink); }
+    .switch-row label { margin:0; }
+    .token-info { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+    .metric { min-width:0; padding:10px 11px; border:1px solid var(--line); border-radius:8px; background:#fafaf7; }
+    .metric span { display:block; color:var(--muted); font-size:11px; }
+    .metric strong { display:block; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+    .status-valid { color:var(--good); } .status-expiring { color:var(--warn); } .status-expired { color:var(--bad); }
+    .actions { position:sticky; bottom:0; z-index:3; display:flex; align-items:center; gap:10px; padding:15px 25px; border-top:1px solid var(--line); background:#fffffff2; backdrop-filter:blur(8px); }
+    #message { min-height:21px; margin:0 0 0 4px; color:var(--muted); }
+    #message.error { color:var(--bad); }
+    .preview-panel { position:sticky; top:20px; padding:18px; }
+    .preview-head { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:13px; }
+    .preview-title { display:flex; align-items:center; gap:9px; }
+    .badge { padding:3px 7px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:11px; font-weight:700; }
+    .badge.stale { background:#f5e9cf; color:#7f570c; }
+    .preview-stage { position:relative; display:grid; place-items:center; min-height:420px; overflow:hidden; border:1px solid #c9cac1; border-radius:10px; background:#dfdfd8; }
+    .preview-stage img { display:block; width:auto; height:auto; max-width:100%; max-height:calc(100vh - 170px); object-fit:contain; background:#fff; box-shadow:0 5px 22px #0002; }
+    .preview-state { position:absolute; inset:0; display:grid; place-items:center; padding:35px; text-align:center; color:var(--muted); background:#efefe9e8; }
+    .preview-state[hidden] { display:none; }
+    .spinner { width:24px; height:24px; margin:0 auto 12px; border:3px solid #aaa7; border-top-color:var(--ink); border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .preview-foot { margin:11px 2px 0; color:var(--muted); font-size:12px; }
+    .security { margin:17px 3px 0; color:var(--muted); font-size:12px; }
+    @media (max-width:1000px) {
+      .layout { grid-template-columns:1fr; }
+      .preview-panel { position:static; grid-row:1; }
+      .preview-stage { min-height:320px; max-height:68vh; }
+      .preview-stage img { max-height:65vh; }
+    }
+    @media (max-width:620px) {
+      .shell { width:min(100% - 20px,1500px); margin-top:20px; }
+      header { align-items:start; }
+      .section { padding:20px 17px; }
+      .grid { grid-template-columns:1fr; }
+      .field.full { grid-column:auto; }
+      .token-info { grid-template-columns:1fr; }
+      .actions { flex-wrap:wrap; padding:13px 17px; }
+      #message { flex-basis:100%; }
+      .preview-head { align-items:start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div><div class="eyebrow">KINDLE DASHBOARD</div><h1>配置与预览</h1></div>
+      <a href="/dash.png" target="_blank" rel="noreferrer">打开 Kindle 原图</a>
+    </header>
+
+    <div class="layout">
+      <form id="config-form" class="panel form-panel">
+        <section class="section">
+          <div class="section-head"><h2>输出</h2><span class="section-note">图片固定为 1080 × 1440 灰度 PNG</span></div>
+          <div class="grid">
+            <div class="field"><label for="orientation">排版方向</label><select id="orientation"><option value="portrait">纵向</option><option value="landscape">横向</option></select></div>
+            <div class="field"><label for="output-path">输出路径</label><input id="output-path" required></div>
+            <div class="field full"><label for="cache-path">数据快照路径</label><input id="cache-path" required><div class="hint">抓取失败时会复用这个快照中的上次成功数据。</div></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>市场</h2><span class="section-note">最多 16 个代码</span></div>
+          <div class="field"><label for="symbols">Yahoo Finance 代码，每行一个</label><textarea id="symbols" spellcheck="false" required></textarea></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>天气</h2><span class="section-note">填写城市，或同时填写经纬度</span></div>
+          <div class="grid">
+            <div class="field full"><label for="weather-location">城市</label><input id="weather-location" placeholder="Shanghai"></div>
+            <div class="field"><label for="latitude">纬度</label><input id="latitude" type="number" min="-90" max="90" step="any" placeholder="自动查询"></div>
+            <div class="field"><label for="longitude">经度</label><input id="longitude" type="number" min="-180" max="180" step="any" placeholder="自动查询"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>Obsidian 待办</h2><span class="section-note">目录下的文件或文件夹都会作为任务</span></div>
+          <div class="grid">
+            <div class="field full"><label for="obsidian-path">Vault 路径</label><input id="obsidian-path" placeholder="D:/Notes/Obsidian"></div>
+            <div class="field"><label for="projects-dir">进行中目录</label><input id="projects-dir" required></div>
+            <div class="field"><label for="archive-dir">已完成目录</label><input id="archive-dir" required></div>
+            <div class="field"><label for="max-items">最大显示数量</label><input id="max-items" type="number" min="1" max="100" required></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>Codex 用量</h2><span class="section-note">Token 仅保存到本机 config.yaml</span></div>
+          <div class="grid">
+            <div class="field full">
+              <label for="token">Bearer Token</label>
+              <div class="inline"><input id="token" type="password" autocomplete="off" spellcheck="false"><button id="toggle-token" type="button">显示</button><button id="paste-token" type="button">粘贴</button></div>
+              <div class="token-info">
+                <div class="metric"><span>状态</span><strong id="token-status">—</strong></div>
+                <div class="metric"><span>过期时间</span><strong id="token-expires">—</strong></div>
+                <div class="metric"><span>剩余时间</span><strong id="token-remaining">—</strong></div>
+              </div>
+            </div>
+            <div class="field full"><label for="usage-url">用量接口</label><input id="usage-url" type="url" required></div>
+            <div class="field"><label for="timeout">请求超时（秒）</label><input id="timeout" type="number" min="1" max="120" required></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>定时生成</h2><span class="section-note">修改计划或服务监听配置后需重启服务</span></div>
+          <div class="grid">
+            <div class="field"><div class="switch-row"><input id="schedule-enabled" type="checkbox"><label for="schedule-enabled">启用定时生成</label></div></div>
+            <div class="field"><label for="cron">Cron 表达式</label><input id="cron" required placeholder="*/15 * * * *"></div>
+            <div class="field full"><label for="timezone">时区</label><input id="timezone" required placeholder="Asia/Shanghai"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2>Web 服务</h2><span class="section-note">修改后需重启服务</span></div>
+          <div class="grid">
+            <div class="field"><label for="server-host">监听地址</label><input id="server-host" required></div>
+            <div class="field"><label for="server-port">端口</label><input id="server-port" type="number" min="1" max="65535" required></div>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="save" class="primary" type="submit" disabled>保存全部配置</button>
+          <button id="reset" type="button" disabled>撤销修改</button>
+          <p id="message" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <aside class="panel preview-panel">
+        <div class="preview-head">
+          <div class="preview-title"><h2>在线预览</h2><span id="preview-badge" class="badge">每分钟刷新</span></div>
+          <button id="refresh-preview" type="button">立即刷新</button>
+        </div>
+        <div class="preview-stage">
+          <img id="preview-image" alt="Dashboard 预览">
+          <div id="preview-state" class="preview-state"><div><div class="spinner"></div><span>正在读取预览…</span></div></div>
+        </div>
+        <p class="preview-foot">预览仅读取当前已生成的 dash.png，每 60 秒自动刷新一次。横向图片会自动旋转后展示，不会触发数据抓取或图片生成。</p>
+      </aside>
+    </div>
+    <p class="security">此页面可读取敏感 Token 并修改运行配置，只应在可信局域网中使用，不要暴露到公网。</p>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const form = $('config-form');
+    const saveButton = $('save');
+    const resetButton = $('reset');
+    const message = $('message');
+    const previewState = $('preview-state');
+    const previewImage = $('preview-image');
+    const previewButton = $('refresh-preview');
+    const previewBadge = $('preview-badge');
+    let savedConfig = null;
+    let savedFingerprint = '';
+    let previewUrl = '';
+
+    function bareToken(value) { return value.trim().replace(/^Bearer\s+/i, '').trim(); }
+    function numberOrNull(value) { return value === '' ? null : Number(value); }
+    function fingerprint(value) { return JSON.stringify(value); }
+
+    function readForm() {
+      const config = structuredClone(savedConfig || {});
+      config.output = { ...(config.output || {}), path:$('output-path').value.trim(), orientation:$('orientation').value };
+      config.cache = { ...(config.cache || {}), data_path:$('cache-path').value.trim() };
+      config.market = { ...(config.market || {}), symbols:$('symbols').value.split(/\r?\n|,/).map(v => v.trim()).filter(Boolean) };
+      config.weather = { ...(config.weather || {}), location:$('weather-location').value.trim(), latitude:numberOrNull($('latitude').value), longitude:numberOrNull($('longitude').value) };
+      config.obsidian = { ...(config.obsidian || {}), path:$('obsidian-path').value.trim(), projects_dir:$('projects-dir').value.trim(), archive_dir:$('archive-dir').value.trim(), max_items:Number($('max-items').value) };
+      config.codex = { ...(config.codex || {}), token:bareToken($('token').value), usage_url:$('usage-url').value.trim(), timeout_seconds:Number($('timeout').value) };
+      config.schedule = { ...(config.schedule || {}), enabled:$('schedule-enabled').checked, cron:$('cron').value.trim(), timezone:$('timezone').value.trim() };
+      config.server = { ...(config.server || {}), host:$('server-host').value.trim(), port:Number($('server-port').value) };
+      return config;
+    }
+
+    function fillForm(config) {
+      $('orientation').value = config.output.orientation;
+      $('output-path').value = config.output.path;
+      $('cache-path').value = config.cache.data_path;
+      $('symbols').value = (config.market.symbols || []).join('\n');
+      $('weather-location').value = config.weather.location || '';
+      $('latitude').value = config.weather.latitude ?? '';
+      $('longitude').value = config.weather.longitude ?? '';
+      $('obsidian-path').value = config.obsidian.path || '';
+      $('projects-dir').value = config.obsidian.projects_dir;
+      $('archive-dir').value = config.obsidian.archive_dir;
+      $('max-items').value = config.obsidian.max_items;
+      $('token').value = config.codex.token || '';
+      $('usage-url').value = config.codex.usage_url;
+      $('timeout').value = config.codex.timeout_seconds;
+      $('schedule-enabled').checked = config.schedule.enabled;
+      $('cron').value = config.schedule.cron;
+      $('timezone').value = config.schedule.timezone;
+      $('server-host').value = config.server.host;
+      $('server-port').value = config.server.port;
+      renderTokenInfo(decodeToken(config.codex.token || ''));
+    }
+
+    function decodeToken(value) {
+      const token = bareToken(value);
+      if (!token) return {status:'missing'};
+      const parts = token.split('.');
+      if (parts.length !== 3) return {status:'unknown'};
+      try {
+        const raw = parts[1].replace(/-/g,'+').replace(/_/g,'/');
+        const binary = atob(raw.padEnd(Math.ceil(raw.length / 4) * 4,'='));
+        const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary,c => c.charCodeAt(0))));
+        const exp = Number(payload.exp);
+        if (!Number.isFinite(exp)) return {status:'unknown'};
+        const left = Math.floor(exp - Date.now() / 1000);
+        return {status:left <= 0 ? 'expired' : left <= 86400 ? 'expiring' : 'valid', expires_at:exp, expires_in_seconds:left};
+      } catch (_) { return {status:'unknown'}; }
+    }
+
+    function durationText(seconds) {
+      if (!Number.isFinite(seconds)) return '未知';
+      const expired = seconds <= 0; let left = Math.abs(seconds);
+      const days = Math.floor(left / 86400); left %= 86400;
+      const hours = Math.floor(left / 3600); const minutes = Math.floor(left % 3600 / 60);
+      const text = [days && `${days} 天`, (days || hours) && `${hours} 小时`, `${minutes} 分钟`].filter(Boolean).join(' ');
+      return expired ? `已过期 ${text}` : text;
+    }
+
+    function renderTokenInfo(info) {
+      const labels = {missing:'未配置',unknown:'无法读取',valid:'有效',expiring:'24 小时内过期',expired:'已过期'};
+      $('token-status').textContent = labels[info.status] || info.status;
+      $('token-status').className = `status-${info.status}`;
+      $('token-expires').textContent = Number.isFinite(info.expires_at) ? new Intl.DateTimeFormat('zh-CN',{dateStyle:'short',timeStyle:'short'}).format(new Date(info.expires_at * 1000)) : '—';
+      $('token-remaining').textContent = Number.isFinite(info.expires_in_seconds) ? durationText(info.expires_in_seconds) : '—';
+    }
+
+    function setDirty() {
+      if (!savedConfig) return;
+      const dirty = fingerprint(readForm()) !== savedFingerprint;
+      saveButton.disabled = !dirty;
+      resetButton.disabled = !dirty;
+      message.textContent = '';
+      message.className = '';
+      renderTokenInfo(decodeToken($('token').value));
+    }
+
+    async function responseError(response, fallback) {
+      try { const data = await response.json(); return data.error || fallback; }
+      catch (_) { return fallback; }
+    }
+
+    function showPreviewState(text, loading=true) {
+      previewState.hidden = false;
+      previewState.innerHTML = `<div>${loading ? '<div class="spinner"></div>' : ''}<span></span></div>`;
+      previewState.querySelector('span').textContent = text;
+    }
+
+    async function loadCurrentPreview() {
+      showPreviewState('正在读取已生成图片…');
+      previewButton.disabled = true;
+      try {
+        const response = await fetch(`/api/preview?t=${Date.now()}`, {cache:'no-store'});
+        if (!response.ok) throw new Error(await responseError(response,'预览读取失败'));
+        displayPreview(await response.blob());
+        previewBadge.textContent = `已刷新 ${new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())}`;
+      } catch (error) { showPreviewState(error.message,false); }
+      finally { previewButton.disabled = false; }
+    }
+
+    function displayPreview(blob) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(blob);
+      previewImage.onload = () => { previewState.hidden = true; };
+      previewImage.onerror = () => { showPreviewState('预览图片加载失败，请立即刷新。',false); };
+      previewImage.src = previewUrl;
+    }
+
+    form.addEventListener('input', setDirty);
+    form.addEventListener('change', setDirty);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      saveButton.disabled = true; message.className = ''; message.textContent = '保存中…';
+      try {
+        const response = await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:readForm()})});
+        const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败');
+        savedConfig = data.config; fillForm(savedConfig); savedFingerprint = fingerprint(readForm()); setDirty();
+        message.textContent = '全部配置已保存。图片会在下次定时生成时更新，也可以立即生成预览。';
+      } catch (error) { message.className = 'error'; message.textContent = error.message; saveButton.disabled = false; }
+    });
+    resetButton.addEventListener('click', () => { fillForm(savedConfig); setDirty(); });
+    $('toggle-token').addEventListener('click', () => { const visible = $('token').type === 'text'; $('token').type = visible ? 'password' : 'text'; $('toggle-token').textContent = visible ? '显示' : '隐藏'; });
+    $('paste-token').addEventListener('click', async () => {
+      try { $('token').value = await navigator.clipboard.readText(); setDirty(); }
+      catch (_) { message.className = 'error'; message.textContent = '浏览器禁止读取剪贴板，请在输入框中按 Ctrl+V。'; $('token').focus(); }
+    });
+    previewButton.addEventListener('click', loadCurrentPreview);
+
+    (async () => {
+      try {
+        const response = await fetch('/api/config',{cache:'no-store'}); const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '配置读取失败');
+        savedConfig = data.config; fillForm(savedConfig); savedFingerprint = fingerprint(readForm()); setDirty();
+      } catch (error) { message.className = 'error'; message.textContent = error.message; }
+      loadCurrentPreview();
+    })();
+    setInterval(loadCurrentPreview,60_000);
+    setInterval(() => renderTokenInfo(decodeToken($('token').value)),60_000);
+  </script>
+</body>
+</html>

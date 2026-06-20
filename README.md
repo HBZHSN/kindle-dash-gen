@@ -61,6 +61,19 @@ For example:
 http://192.168.31.115:5678/dash.png
 ```
 
+Open the settings and live preview page at:
+
+```text
+http://<your-lan-ip>:5678/settings
+```
+
+The page edits every runtime setting (output, data sources, schedule, server, and Codex token) and saves the
+complete configuration atomically to `config.yaml`. The live preview reloads the existing `dash.png` every
+60 seconds without triggering data fetches or image generation. Landscape Kindle output is automatically
+rotated back to a browser-friendly 1440x1080 preview. A clock appears beside `5H` in both
+portrait and landscape dashboards when the token expires within 24 hours or is already expired. The settings
+page exposes a credential, so keep the server on a trusted LAN and do not publish it to the internet.
+
 `/dash.png` reads `config.yaml` only to locate `output.path`, then returns that existing PNG. If it has not
 been generated yet, run `python dash.py --once` first.
 
