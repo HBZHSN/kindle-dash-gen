@@ -9,7 +9,7 @@ import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "server": {"host": "0.0.0.0", "port": 5678},
-    "output": {"path": "dash.png"},
+    "output": {"path": "dash.png", "orientation": "portrait"},
     "cache": {"data_path": ".cache/dashboard-data.json"},
     "schedule": {
         "enabled": True,

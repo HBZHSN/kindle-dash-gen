@@ -198,15 +198,13 @@ def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data:
     split = x1 + int((x2 - x1) * 0.60)
 
     time_x = x1 + 52
-    time_y = y1 + 42
+    time_y = y1 + 50
     date_font = _font(26, bold=True)
-    note_font = _font(20)
     time_font = _font(158, bold=True)
     date_left = data.generated_at.strftime("%b %d, %Y").upper()
     date_right = data.generated_at.strftime("%A").upper()
     draw.text((time_x, time_y), f"{date_left}  {date_right}", fill=INK, font=date_font)
-    draw.text((time_x - 6, y1 + 88), data.generated_at.strftime("%H:%M"), fill=INK, font=time_font)
-    draw.text((time_x, y2 - 25), "ASIA / SHANGHAI", fill=INK, font=note_font)
+    draw.text((time_x - 6, y1 + 98), data.generated_at.strftime("%H:%M"), fill=INK, font=time_font)
 
     weather_x = split + 38
     weather_right = x2 - 38
@@ -226,28 +224,25 @@ def _draw_hero(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data:
 
     temp = ascii_text(data.weather.temperature, "-- C")
     temp = re.sub(r"\s*C$", " C", temp).strip()
-    _draw_fit(draw, (weather_x, y1 + 100), temp, temp_font, weather_right - weather_x)
+    _draw_fit(draw, (weather_x, y1 + 120), temp, temp_font, weather_right - weather_x)
 
-    detail_y = y2 - 55
-    details: list[str] = [data.weather.wind]
     if data.weather.status != "OK":
-        details.append(data.weather.status)
-    for detail in details:
-        _draw_fit(draw, (weather_x, detail_y), ascii_text(detail).upper(), detail_font, weather_right - weather_x, fill=INK)
-        detail_y += 24
+        _draw_fit(draw, (weather_x, y2 - 55), ascii_text(data.weather.status).upper(), detail_font, weather_right - weather_x, fill=INK)
 
 
 def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quotes: list[MarketQuote]) -> None:
     x1, y1, x2, y2 = rect
     rows = quotes[:8] or [MarketQuote(symbol="No symbols", price="--", change="--")]
-    content_y = _section_title(draw, rect, "Markets", f"{len(quotes)} Symbols")
-    row_top = content_y + 12
-    row_h = max(42, (y2 - row_top - 32) // 4)
-    gap = 54
+    row_top = y1 + 8
+    row_h = max(56, (y2 - row_top - 48) // 4)
+    gap = 56
     col_w = ((x2 - x1) - 92 - gap) // 2
-    symbol_font = _font(34, bold=True)
-    price_font = _font(26)
-    change_font = _font(26, bold=True)
+    symbol_font = _font(36, bold=True)
+    price_font = _font(28)
+    change_font = _font(28, bold=True)
+
+    sep_x = x1 + 46 + col_w + gap // 2
+    draw.line((sep_x, row_top, sep_x, row_top + 4 * row_h), fill=LIGHT, width=1)
 
     for index, quote in enumerate(rows):
         col = index % 2
@@ -258,14 +253,19 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
             draw.line((rx, ry + row_h - 1, rx + col_w, ry + row_h - 1), fill=LIGHT, width=1)
 
         symbol = ascii_text(quote.symbol, "SYM")
-        price = ascii_text(quote.price, "--")
-        change = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
-        change_w = 100
-        price_w = 128
+        price_raw = ascii_text(quote.price, "--")
+        change_raw = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
+        change_w = 130
+        change = _truncate(draw, change_raw, change_font, change_w)
+        change_px = _text_w(draw, change, change_font)
+        price_gap = 16
+        price_max = col_w - change_px - price_gap - 10
+        price = _truncate(draw, price_raw, price_font, price_max)
+        price_px = _text_w(draw, price, price_font)
         baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
-        _draw_fit(draw, (rx, baseline), symbol, symbol_font, col_w - price_w - change_w - 14)
-        _draw_fit(draw, (rx + col_w - price_w - change_w, baseline + 4), price, price_font, price_w)
-        _draw_fit(draw, (rx + col_w, baseline + 8), change, change_font, change_w, anchor="ra")
+        _draw_fit(draw, (rx, baseline), symbol, symbol_font, col_w - price_px - change_px - price_gap - 10)
+        draw.text((rx + col_w - change_px - price_gap, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
+        draw.text((rx + col_w, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
 
 
 def _usage_percent(text: str) -> int:
@@ -291,8 +291,15 @@ def _usage_note(text: str, status: str) -> str:
     return "Moderate activity"
 
 
-def _draw_meter(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], percent: int) -> None:
+def _draw_meter(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[int, int, int, int],
+    percent: int,
+    t_progress: int = 0,
+    e_progress: int = 0,
+) -> None:
     x1, y1, x2, y2 = rect
+    w = x2 - x1
     draw.rectangle(rect, outline=INK, width=LINE_W)
     inner_x = x1 + 3
     inner_y = y1 + 3
@@ -306,6 +313,39 @@ def _draw_meter(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], perc
         if i < filled:
             draw.rectangle((sx, inner_y, sx + segment_w, inner_y + inner_h), fill=INK)
 
+    arrow_h = 14
+    arrow_hw = 10
+    arrow_gap = 3
+    border_w = 2
+
+    def _clamp_x(pct: int) -> int:
+        ax = x1 + int(w * max(0, min(100, pct)) / 100)
+        return max(x1 + arrow_hw, min(x2 - arrow_hw, ax))
+
+    tx = _clamp_x(t_progress)
+    utip = [
+        (tx - arrow_hw, y1 - arrow_gap - arrow_h),
+        (tx + arrow_hw, y1 - arrow_gap - arrow_h),
+        (tx, y1 - arrow_gap),
+    ]
+    if percent >= max(t_progress, 0):
+        for i in range(3):
+            draw.line([utip[i], utip[(i + 1) % 3]], fill=INK, width=border_w)
+    else:
+        draw.polygon(utip, fill=INK)
+
+    ex = _clamp_x(e_progress)
+    ltip = [
+        (ex - arrow_hw, y2 + arrow_gap + arrow_h),
+        (ex + arrow_hw, y2 + arrow_gap + arrow_h),
+        (ex, y2 + arrow_gap),
+    ]
+    if percent >= max(e_progress, 0):
+        for i in range(3):
+            draw.line([ltip[i], ltip[(i + 1) % 3]], fill=INK, width=border_w)
+    else:
+        draw.polygon(ltip, fill=INK)
+
 
 def _draw_usage_card(
     draw: ImageDraw.ImageDraw,
@@ -313,29 +353,176 @@ def _draw_usage_card(
     name: str,
     value: str,
     status: str,
+    t_progress: int = 0,
+    e_progress: int = 0,
 ) -> None:
     x1, y1, x2, y2 = rect
-    name_font = _font(24, bold=True)
-    pct_font = _font(48, bold=True)
-    foot_font = _font(18)
+    w = x2 - x1
+    cx = x1 + w // 2
+    name_font = _font(34, bold=True)
+    pct_font = _font(140, bold=True)
+    foot_font = _font(28)
     percent = _usage_percent(value)
-    draw.text((x1, y1), ascii_text(name).upper(), fill=INK, font=name_font)
     pct_text = f"{percent}%"
-    draw.text((x2, y1 - 4), pct_text, fill=INK, font=pct_font, anchor="ra")
-    meter_top = min(y1 + 70, y2 - 82)
-    _draw_meter(draw, (x1, meter_top, x2, meter_top + 52), percent)
-    _draw_fit(draw, (x1, meter_top + 66), ascii_text(_usage_note(value, status)).upper(), foot_font, x2 - x1)
+    pct_h = _text_h(draw, pct_text, pct_font)
+    draw.text((cx, y1 + 10), ascii_text(name).upper(), fill=INK, font=name_font, anchor="mt")
+    pct_y = y1 + 88
+    draw.text((cx, pct_y), pct_text, fill=INK, font=pct_font, anchor="mt")
+    bar_w = min(w - 40, 520)
+    bar_h = 36
+    bar_x = cx - bar_w // 2
+    bar_y = pct_y + pct_h + 28
+    _draw_meter(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), percent, t_progress, e_progress)
+    note = ascii_text(_usage_note(value, status)).upper()
+    draw.text((cx, bar_y + bar_h + 30), note, fill=INK, font=foot_font, anchor="mt")
 
 
 def _draw_focus(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], codex: CodexUsage) -> None:
     x1, y1, x2, y2 = rect
-    content_y = _section_title(draw, rect, "Codex Usage", "Current")
     gap = 46
     card_w = ((x2 - x1) - 92 - gap) // 2
-    top = content_y + 20
-    bottom = y2 - 12
-    _draw_usage_card(draw, (x1 + 46, top, x1 + 46 + card_w, bottom), "5H Window", codex.primary, codex.status)
-    _draw_usage_card(draw, (x1 + 46 + card_w + gap, top, x2 - 46, bottom), "Weekly", codex.secondary, codex.status)
+    top = y1 + 32
+    bottom = y2 - 8
+    _draw_usage_card(draw, (x1 + 46, top, x1 + 46 + card_w, bottom), "5H", codex.primary, codex.status, codex.primary_t, codex.primary_e)
+    _draw_usage_card(draw, (x1 + 46 + card_w + gap, top, x2 - 46, bottom), "Weekly", codex.secondary, codex.status, codex.secondary_t, codex.secondary_e)
+
+
+def _draw_time_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data: DashboardData) -> None:
+    x1, y1, x2, y2 = rect
+    cx = x1 + (x2 - x1) // 2
+    date_font = _font(26, bold=True)
+    time_font = _font(158, bold=True)
+    date_left = data.generated_at.strftime("%b %d, %Y").upper()
+    date_right = data.generated_at.strftime("%A").upper()
+    draw.text((cx, y1 + 50), f"{date_left}  {date_right}", fill=INK, font=date_font, anchor="mt")
+    draw.text((cx, y1 + 98), data.generated_at.strftime("%H:%M"), fill=INK, font=time_font, anchor="mt")
+
+
+def _draw_weather_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], data: DashboardData) -> None:
+    x1, y1, x2, y2 = rect
+    w = x2 - x1
+    cx = x1 + w // 2
+    section_h = y2 - y1
+    label_font = _font(24, bold=True)
+    temp_font = _font(68, bold=True)
+    detail_font = _font(18)
+    label = ascii_text(data.weather.title, "WEATHER").upper()
+    label_h = _text_h(draw, label, label_font)
+    temp_str = ascii_text(data.weather.temperature, "-- C")
+    temp_str = re.sub(r"\s*C$", " C", temp_str).strip()
+    temp_w = _text_w(draw, temp_str, temp_font)
+    temp_h = _text_h(draw, temp_str, temp_font)
+    icon_size = 52
+    row_gap = 16
+    label_gap = 24
+    content_h = label_h + label_gap + max(temp_h, icon_size)
+    offset = (section_h - content_h) // 2
+    label_y = y1 + offset
+    _draw_fit(draw, (cx, label_y), label, label_font, w - 40, anchor="mt")
+    row_y = label_y + label_h + label_gap
+    row_w = temp_w + row_gap + icon_size
+    row_start = cx - row_w // 2
+    temp_x = row_start + temp_w
+    temp_y = row_y
+    draw.text((temp_x, temp_y), temp_str, fill=INK, font=temp_font, anchor="ra")
+    icon_x = row_start + temp_w + row_gap
+    icon_y = temp_y + (temp_h - icon_size) // 2
+    icon_rect = (icon_x, icon_y, icon_x + icon_size, icon_y + icon_size)
+    weather_icon = _load_weather_icon(data.weather.weather_code, size=icon_size)
+    if weather_icon is not None:
+        inverted = ImageOps.invert(weather_icon)
+        draw.bitmap((icon_rect[0], icon_rect[1]), inverted, fill=INK)
+    else:
+        _draw_cloud_icon(draw, icon_rect)
+    if data.weather.status != "OK":
+        _draw_fit(draw, (cx, y2 - 20), ascii_text(data.weather.status).upper(), detail_font, w - 40, anchor="mt", fill=INK)
+
+
+def _draw_usage_card_compact(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[int, int, int, int],
+    name: str,
+    value: str,
+    status: str,
+    t_progress: int = 0,
+    e_progress: int = 0,
+) -> None:
+    x1, y1, x2, y2 = rect
+    w = x2 - x1
+    cx = x1 + w // 2
+    name_font = _font(26, bold=True)
+    pct_font = _font(72, bold=True)
+    foot_font = _font(20)
+    percent = _usage_percent(value)
+    pct_text = f"{percent}%"
+    pct_h = _text_h(draw, pct_text, pct_font)
+    draw.text((cx, y1 + 8), ascii_text(name).upper(), fill=INK, font=name_font, anchor="mt")
+    pct_y = y1 + 48
+    draw.text((cx, pct_y), pct_text, fill=INK, font=pct_font, anchor="mt")
+    bar_w = min(w - 40, 400)
+    bar_h = 28
+    bar_x = cx - bar_w // 2
+    bar_y = pct_y + pct_h + 24
+    _draw_meter(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), percent, t_progress, e_progress)
+    note = ascii_text(_usage_note(value, status)).upper()
+    draw.text((cx, bar_y + bar_h + 30), note, fill=INK, font=foot_font, anchor="mt")
+
+
+def _draw_focus_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], codex: CodexUsage) -> None:
+    x1, y1, x2, y2 = rect
+    h = y2 - y1
+    gap = 16
+    card_h = (h - gap) // 2
+
+    pct_font = _font(72, bold=True)
+    foot_font = _font(20)
+    note_h = _text_h(draw, "MODERATE ACTIVITY", foot_font)
+    pct_h = _text_h(draw, "88%", pct_font)
+    bar_h = 28
+    content_top = 8
+    content_bottom = 48 + pct_h + 24 + bar_h + 30 + note_h
+    content_h = content_bottom - content_top
+    top_pad = max(0, (card_h - content_h) // 2)
+
+    top_rect = (x1, y1 + top_pad, x2, y2)
+    _draw_usage_card_compact(draw, top_rect, "5H", codex.primary, codex.status, codex.primary_t, codex.primary_e)
+
+    div_y = y1 + card_h + gap // 2
+    draw.line((x1, div_y, x2, div_y), fill=LIGHT, width=1)
+
+    bot_y1 = y1 + card_h + gap
+    bot_rect = (x1, bot_y1 + top_pad, x2, y2)
+    _draw_usage_card_compact(draw, bot_rect, "Weekly", codex.secondary, codex.status, codex.secondary_t, codex.secondary_e)
+
+
+def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quotes: list[MarketQuote]) -> None:
+    x1, y1, x2, y2 = rect
+    w = x2 - x1
+    rows = quotes[:8] or [MarketQuote(symbol="No symbols", price="--", change="--")]
+    row_top = y1 + 8
+    row_h = max(56, (y2 - row_top - 48) // len(rows))
+    symbol_font = _font(36, bold=True)
+    price_font = _font(28)
+    change_font = _font(28, bold=True)
+    right_edge = x2 - 46
+    change_w = 130
+    for index, quote in enumerate(rows):
+        ry = row_top + index * row_h
+        if index < len(rows) - 1:
+            draw.line((x1 + 46, ry + row_h - 1, right_edge, ry + row_h - 1), fill=LIGHT, width=1)
+        symbol = ascii_text(quote.symbol, "SYM")
+        price_raw = ascii_text(quote.price, "--")
+        change_raw = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
+        change = _truncate(draw, change_raw, change_font, change_w)
+        change_px = _text_w(draw, change, change_font)
+        price_gap = 16
+        price_max = w - 92 - change_px - price_gap
+        price = _truncate(draw, price_raw, price_font, price_max)
+        price_px = _text_w(draw, price, price_font)
+        baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
+        _draw_fit(draw, (x1 + 46, baseline), symbol, symbol_font, w - 92 - price_px - change_px - price_gap - 10)
+        draw.text((right_edge - change_px - price_gap, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
+        draw.text((right_edge, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
 
 
 def _todo_items(todos: TodoSummary) -> list[tuple[str, bool]]:
@@ -400,29 +587,82 @@ def _draw_footer(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], gen
     draw.text((x2 - 46, cy), refresh, fill=INK, font=font, anchor="rm")
 
 
-def render_dashboard(data: DashboardData, output: str | Path) -> Path:
-    image = Image.new("L", (WIDTH, HEIGHT), PAPER)
-    draw = ImageDraw.Draw(image)
+def render_dashboard(data: DashboardData, output: str | Path, orientation: str = "portrait") -> Path:
+    if orientation == "landscape":
+        canvas_w, canvas_h = 1440, 1080
+        dash_x, dash_y = 8, 8
+        dash_w, dash_h = 1424, 1064
 
-    x1 = DASH_X
-    y1 = DASH_Y
-    x2 = DASH_X + DASH_W
-    y2 = DASH_Y + DASH_H
+        image = Image.new("L", (canvas_w, canvas_h), PAPER)
+        draw = ImageDraw.Draw(image)
 
-    heights = [280, 484, 282, 378]
-    top = y1
-    sections: list[tuple[int, int, int, int]] = []
-    for height in heights:
-        sections.append((x1, top, x2, top + height))
-        top += height
+        left_w = 580
+        left_x1 = dash_x
+        left_x2 = dash_x + left_w
+        col_gap = 24
+        right_x1 = left_x2 + col_gap
+        right_x2 = dash_x + dash_w
 
-    for _, _, _, section_bottom in sections[:-1]:
-        draw.line((x1, section_bottom, x2, section_bottom), fill=INK, width=LINE_W)
+        time_y1 = dash_y
+        time_y2 = time_y1 + 280
+        _draw_time_landscape(draw, (left_x1, time_y1, left_x2, time_y2), data)
+        draw.line((left_x1, time_y2, left_x2, time_y2), fill=INK, width=LINE_W)
 
-    _draw_hero(draw, sections[0], data)
-    _draw_market(draw, sections[1], data.market)
-    _draw_focus(draw, sections[2], data.codex)
-    _draw_todos(draw, sections[3], data.todos)
+        weather_y1 = time_y2
+        weather_y2 = weather_y1 + 224
+        _draw_weather_landscape(draw, (left_x1, weather_y1, left_x2, weather_y2), data)
+        draw.line((left_x1, weather_y2, left_x2, weather_y2), fill=INK, width=LINE_W)
+
+        codex_y1 = weather_y2
+        codex_y2 = dash_y + dash_h
+        _draw_focus_landscape(draw, (left_x1, codex_y1, left_x2, codex_y2), data.codex)
+
+        sep_x = left_x2 + col_gap // 2
+        draw.line((sep_x, dash_y, sep_x, dash_y + dash_h), fill=INK, width=LINE_W)
+
+        _draw_market_landscape(draw, (right_x1, dash_y, right_x2, dash_y + dash_h), data.market)
+
+        image = image.rotate(270, expand=True, fillcolor=PAPER)
+    else:
+        canvas_w, canvas_h = WIDTH, HEIGHT
+        dash_x, dash_y = DASH_X, DASH_Y
+        dash_w, dash_h = DASH_W, DASH_H
+        section_heights = [280, 440, 704]
+
+        image = Image.new("L", (canvas_w, canvas_h), PAPER)
+        draw = ImageDraw.Draw(image)
+
+        x1 = dash_x
+        y1 = dash_y
+        x2 = dash_x + dash_w
+        y2 = dash_y + dash_h
+
+        top = y1
+        sections: list[tuple[int, int, int, int]] = []
+        for height in section_heights:
+            sections.append((x1, top, x2, top + height))
+            top += height
+
+        divider_font = _font(26, bold=True)
+        divider_labels = ["CODEX", "MARKETS"]
+        for i, (_, _, _, section_bottom) in enumerate(sections[:-1]):
+            label = divider_labels[i]
+            line_y = section_bottom
+            draw.line((x1, line_y, x2, line_y), fill=INK, width=LINE_W)
+            label_h = _text_h(draw, label, divider_font)
+            label_w = _text_w(draw, label, divider_font)
+            pad = 14
+            label_cx = x1 + (x2 - x1) // 2
+            bx = label_cx - label_w // 2 - pad
+            by = line_y - label_h // 2
+            bw = label_w + pad * 2
+            bh = label_h
+            draw.rectangle((bx, by, bx + bw, by + bh), fill=PAPER)
+            draw.text((label_cx, line_y), label, fill=INK, font=divider_font, anchor="mm")
+
+        _draw_hero(draw, sections[0], data)
+        _draw_focus(draw, sections[1], data.codex)
+        _draw_market(draw, sections[2], data.market)
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

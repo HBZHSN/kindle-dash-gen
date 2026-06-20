@@ -93,7 +93,8 @@ def build_dashboard(config_path: str | Path = "config.yaml") -> Path:
     )
     data = _merge_with_snapshot(current, previous)
     _write_snapshot(snapshot_path, data)
-    rendered = render_dashboard(data, output_path).resolve()
+    orientation = str(config.get("output", {}).get("orientation") or "portrait")
+    rendered = render_dashboard(data, output_path, orientation).resolve()
     logger.info("Dashboard rendered: path=%s", rendered)
     return rendered
 

@@ -4,7 +4,7 @@ import logging
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, time, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,10 @@ class CodexUsage:
     secondary: str
     allowed: str
     status: str = "OK"
+    primary_t: int = 0
+    primary_e: int = 0
+    secondary_t: int = 0
+    secondary_e: int = 0
 
 
 @dataclass
@@ -202,7 +206,7 @@ def fetch_weather(config: dict[str, Any]) -> WeatherReport:
         return report
 
 
-def _format_window(window: dict[str, Any] | None) -> str:
+def _format_window(window: dict[str, Any] | None, short_reset: bool = False) -> str:
     if not window:
         return "N/A"
 
@@ -217,9 +221,97 @@ def _format_window(window: dict[str, Any] | None) -> str:
 
     reset_at = window.get("reset_at")
     if reset_at:
-        reset = datetime.fromtimestamp(int(reset_at), tz=timezone.utc).astimezone().strftime("%m-%d %H:%M")
+        if short_reset and reset_seconds:
+            s = int(reset_seconds)
+            h = s // 3600
+            m = (s % 3600) // 60
+            reset = f"in {h}h {m}m"
+        else:
+            reset = datetime.fromtimestamp(int(reset_at), tz=timezone.utc).astimezone().strftime("%a %H:%M")
         return f"{used}% {note}, reset {reset}"
     return f"{used}% {note}"
+
+
+def _work_seconds(start: datetime, end: datetime) -> int:
+    """Count effective working seconds between two timestamps (local tz).
+
+    Working hours (server local time): Mon-Fri, 09:00-11:30, 13:00-18:00.
+    Weekends, lunch break and non-working hours are excluded.
+    No statutory holidays are excluded.
+    """
+    if start >= end:
+        return 0
+    local_start = start.astimezone()
+    local_end = end.astimezone()
+
+    morning_start = time(9, 0)
+    morning_end = time(11, 30)
+    afternoon_start = time(13, 0)
+    afternoon_end = time(18, 0)
+
+    total = 0.0
+    day_delta = timedelta(days=1)
+    d = local_start.date()
+    end_d = local_end.date()
+
+    while d <= end_d:
+        if d.weekday() < 5:
+            def _at(t: time) -> datetime:
+                return datetime(d.year, d.month, d.day, t.hour, t.minute, tzinfo=local_start.tzinfo)
+
+            ms, me = _at(morning_start), _at(morning_end)
+            s = max(local_start, ms)
+            e = min(local_end, me)
+            if s < e:
+                total += (e - s).total_seconds()
+
+            as_, ae = _at(afternoon_start), _at(afternoon_end)
+            s = max(local_start, as_)
+            e = min(local_end, ae)
+            if s < e:
+                total += (e - s).total_seconds()
+
+        d += day_delta
+
+    return int(total)
+
+
+def _window_progress(window: dict[str, Any] | None) -> tuple[int, int]:
+    """Compute (natural_time_progress, effective_work_progress) in percent.
+
+    Returns (0, 0) when data is missing or cannot be computed.
+    """
+    if not window:
+        return (0, 0)
+
+    limit_seconds = window.get("limit_window_seconds")
+    reset_after = window.get("reset_after_seconds")
+    reset_at = window.get("reset_at")
+
+    if not limit_seconds or not reset_after or not reset_at:
+        return (0, 0)
+
+    try:
+        limit_seconds = int(limit_seconds)
+        reset_after = int(reset_after)
+        reset_at_ts = int(reset_at)
+
+        t = max(0, min(100, int(round((limit_seconds - reset_after) / limit_seconds * 100))))
+
+        reset_dt = datetime.fromtimestamp(reset_at_ts, tz=timezone.utc)
+        window_start = reset_dt - timedelta(seconds=limit_seconds)
+        now = datetime.now(timezone.utc)
+
+        total_work = _work_seconds(window_start, reset_dt)
+        if total_work > 0:
+            elapsed_work = _work_seconds(window_start, now)
+            e = max(0, min(100, int(round(elapsed_work / total_work * 100))))
+        else:
+            e = 0
+    except Exception:
+        return (0, 0)
+
+    return (t, e)
 
 
 def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
@@ -242,10 +334,18 @@ def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
         response.raise_for_status()
         payload = response.json()
         rate_limit = payload.get("rate_limit") or {}
+        primary_window = rate_limit.get("primary_window")
+        secondary_window = rate_limit.get("secondary_window")
+        primary_t, primary_e = _window_progress(primary_window)
+        secondary_t, secondary_e = _window_progress(secondary_window)
         usage = CodexUsage(
-            primary=_format_window(rate_limit.get("primary_window")),
-            secondary=_format_window(rate_limit.get("secondary_window")),
+            primary=_format_window(primary_window, short_reset=True),
+            secondary=_format_window(secondary_window),
             allowed="yes" if rate_limit.get("allowed") else "no",
+            primary_t=primary_t,
+            primary_e=primary_e,
+            secondary_t=secondary_t,
+            secondary_e=secondary_e,
         )
         logger.info(
             "Codex usage fetched: primary=%s secondary=%s allowed=%s",

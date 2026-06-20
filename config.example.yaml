@@ -4,6 +4,7 @@ server:
 
 output:
   path: "dash.png"
+  orientation: "portrait"  # portrait | landscape (output image always 1080x1440 PNG)
 
 cache:
   data_path: ".cache/dashboard-data.json"
