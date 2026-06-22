@@ -11,15 +11,17 @@ The generated image is:
 - No alpha channel
 - English-only text, with non-ASCII names sanitized before rendering
 
-## Samples
+## Sample
 
-Both samples are the actual `1080x1440` grayscale PNGs sent to the Kindle. The landscape output is
-pre-rotated so it reads correctly when the Kindle is held sideways.
+The landscape dashboard preview below is rotated 90° counter-clockwise so it reads upright on screen.
+The Kindle output itself stays a pre-rotated `1080x1440` grayscale PNG.
 
-| Portrait | Landscape |
-| :---: | :---: |
-| <img src="img/sample-portrait.png" width="320" alt="Portrait dashboard sample"> | <img src="img/sample-landscape.png" width="320" alt="Landscape dashboard sample"> |
-| `output.orientation: portrait` | `output.orientation: landscape` |
+<p align="center">
+  <img src="img/sample-landscape.png" width="640" alt="Landscape dashboard sample">
+</p>
+
+On the Kindle side, you can use [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash) to
+automatically pull and display the generated `/dash.png`.
 
 ## Setup
 

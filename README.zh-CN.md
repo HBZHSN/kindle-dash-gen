@@ -13,12 +13,13 @@
 
 ## 样例
 
-两张样例都是实际发送到 Kindle 的 `1080x1440` 灰度 PNG。横屏输出已预先旋转，因此在 Kindle 横向放置时能正常阅读。
+下方的横屏仪表盘预览已逆时针旋转 90°，便于在屏幕上正向阅读。发送到 Kindle 的实际输出仍为预先旋转的 `1080x1440` 灰度 PNG。
 
-| 竖屏 | 横屏 |
-| :---: | :---: |
-| <img src="img/sample-portrait.png" width="320" alt="竖屏仪表盘样例"> | <img src="img/sample-landscape.png" width="320" alt="横屏仪表盘样例"> |
-| `output.orientation: portrait` | `output.orientation: landscape` |
+<p align="center">
+  <img src="img/sample-landscape.png" width="640" alt="横屏仪表盘样例">
+</p>
+
+在 Kindle 端，你可以使用 [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash) 自动拉取并显示生成的 `/dash.png`。
 
 ## 安装
 
