@@ -11,6 +11,7 @@ import yaml
 from apscheduler.triggers.cron import CronTrigger
 
 from .codex_token import normalize_token
+from .text import parse_symbol_spec
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -33,6 +34,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "^NDX",
             "GC=F",
         ],
+        "denoise_symbols": [],
     },
     "weather": {"location": "Shanghai", "latitude": None, "longitude": None},
     "obsidian": {
@@ -153,11 +155,28 @@ def validate_config(value: object) -> dict[str, Any]:
     normalized_symbols: list[str] = []
     for index, symbol in enumerate(symbols):
         normalized = _string(symbol, f"market.symbols[{index}]")
-        if normalized not in normalized_symbols:
-            normalized_symbols.append(normalized)
+        primary, fallback = parse_symbol_spec(normalized)
+        if "(" in normalized or ")" in normalized:
+            if not primary or fallback is None:
+                raise ValueError(
+                    f"market.symbols[{index}] must look like PRIMARY(FALLBACK)"
+                )
+        canonical = f"{primary}({fallback})" if fallback else primary
+        if canonical not in normalized_symbols:
+            normalized_symbols.append(canonical)
     if len(normalized_symbols) > 16:
         raise ValueError("market.symbols supports at most 16 symbols")
     market["symbols"] = normalized_symbols
+
+    denoise = market.get("denoise_symbols", [])
+    if not isinstance(denoise, list):
+        raise ValueError("market.denoise_symbols must be a list")
+    normalized_denoise: list[str] = []
+    for index, symbol in enumerate(denoise):
+        normalized = _string(symbol, f"market.denoise_symbols[{index}]")
+        if normalized not in normalized_denoise:
+            normalized_denoise.append(normalized)
+    market["denoise_symbols"] = normalized_denoise
 
     weather = config["weather"]
     weather["location"] = _string(weather.get("location"), "weather.location", allow_empty=True)

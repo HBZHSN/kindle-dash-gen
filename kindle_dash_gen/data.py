@@ -4,7 +4,7 @@ import logging
 import math
 import re
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, time, timezone
 from pathlib import Path
 from typing import Any
@@ -13,7 +13,7 @@ import requests
 import yfinance as yf
 
 from .codex_token import inspect_token, normalize_token
-from .text import ascii_text
+from .text import ascii_text, parse_symbol_spec
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,12 @@ class MarketQuote:
     status: str = "OK"
     intraday: list[float] = field(default_factory=list)
     is_closed: bool = False
+    trading_progress: float = 1.0
+    delay_minutes: int = 0
+    is_24h: bool = False
+    secondary_symbol: str = ""
+    secondary_price: str = ""
+    secondary_change: str = ""
 
 
 @dataclass
@@ -92,6 +98,18 @@ def _positive_number(value: object) -> float | None:
         return None
 
 
+def _to_utc_datetime(value: Any) -> datetime:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, timezone.utc)
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        dt = datetime.fromisoformat(str(value))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _market_is_closed(metadata: dict[str, Any], now: datetime | None = None) -> bool:
     state = str(metadata.get("marketState") or "").strip().upper()
     if state in {"POST", "POSTPOST", "CLOSED"}:
@@ -104,24 +122,116 @@ def _market_is_closed(metadata: dict[str, Any], now: datetime | None = None) -> 
     if end is None:
         return False
     try:
-        if isinstance(end, (int, float)):
-            end_time = datetime.fromtimestamp(end, timezone.utc)
-        elif isinstance(end, datetime):
-            end_time = end
-        else:
-            end_time = datetime.fromisoformat(str(end))
-        if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+        end_time = _to_utc_datetime(end)
         current_time = now or datetime.now(timezone.utc)
         if current_time.tzinfo is None:
             current_time = current_time.replace(tzinfo=timezone.utc)
+        start = regular.get("start")
+        if start is not None:
+            start_time = _to_utc_datetime(start)
+            return not (start_time <= current_time < end_time)
         return current_time >= end_time
     except (TypeError, ValueError, OSError, OverflowError):
         return False
 
 
-def _quote_from_intraday(symbol: str, closes: Any, metadata: dict[str, Any]) -> MarketQuote:
+def _trading_progress(metadata: dict[str, Any], now: datetime | None = None) -> float:
+    regular = (metadata.get("currentTradingPeriod") or {}).get("regular") or {}
+    start = regular.get("start")
+    end = regular.get("end")
+    if start is None or end is None:
+        return 1.0
+    try:
+        start_time = _to_utc_datetime(start)
+        end_time = _to_utc_datetime(end)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return 1.0
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    total = (end_time - start_time).total_seconds()
+    if total <= 0:
+        return 1.0
+    elapsed = (current - start_time).total_seconds()
+    return max(0.0, min(1.0, elapsed / total))
+
+
+def _quote_delay_minutes(
+    metadata: dict[str, Any], is_closed: bool, now: datetime | None = None
+) -> int:
+    if is_closed:
+        return 0
+    quote_time = metadata.get("regularMarketTime")
+    if not isinstance(quote_time, (int, float)):
+        return 0
+    try:
+        quoted_at = datetime.fromtimestamp(float(quote_time), timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return 0
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    minutes = round((current - quoted_at).total_seconds() / 60)
+    return minutes if minutes >= 2 else 0
+
+
+def _is_24h_market(metadata: dict[str, Any]) -> bool:
+    instrument = str(metadata.get("instrumentType") or "").strip().upper()
+    if instrument == "CRYPTOCURRENCY":
+        return True
+    regular = (metadata.get("currentTradingPeriod") or {}).get("regular") or {}
+    start = regular.get("start")
+    end = regular.get("end")
+    if not (isinstance(start, (int, float)) and isinstance(end, (int, float))):
+        return False
+    return (end - start) >= 23 * 3600
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _drop_price_outliers(prices: list[float]) -> list[float]:
+    """Remove glitched intraday bars that sit far off the curve.
+
+    yfinance occasionally returns isolated one-minute closes that are wildly
+    off (often a recurring bad value far below the real price). Those points
+    show up as a lone dot or spike that does not connect into the curve.
+
+    A global filter is wrong here: during a trending day the first/last bars are
+    legitimately far from the day's median. Instead compare each point to the
+    median of its local neighbours and drop only the ones that break away from
+    that local trend, so genuine moves are kept but spikes are removed.
+    """
+    n = len(prices)
+    if n < 7:
+        return prices
+    radius = 3
+    residuals: list[float] = []
+    for i in range(n):
+        lo = max(0, i - radius)
+        hi = min(n, i + radius + 1)
+        window = prices[lo:i] + prices[i + 1 : hi]
+        residuals.append(prices[i] - _median(window))
+    scale = _median([abs(r) for r in residuals])
+    if scale <= 0:
+        return prices
+    kept = [value for value, residual in zip(prices, residuals) if abs(residual) <= 8.0 * scale]
+    if len(kept) < 2 or len(kept) < n // 2:
+        return prices
+    return kept
+
+
+def _quote_from_intraday(
+    symbol: str, closes: Any, metadata: dict[str, Any], denoise: bool = False
+) -> MarketQuote:
     prices = [float(value) for value in closes.tolist() if math.isfinite(float(value))]
+    if denoise:
+        prices = _drop_price_outliers(prices)
     if not prices:
         raise ValueError("no intraday close prices")
 
@@ -141,16 +251,21 @@ def _quote_from_intraday(symbol: str, closes: Any, metadata: dict[str, Any]) -> 
     prices[-1] = last
     intraday = [round(((price - prev) / prev) * 100, 4) for price in prices]
     pct = ((last - prev) / prev) * 100
+    is_closed = _market_is_closed(metadata)
+    is_24h = _is_24h_market(metadata)
     return MarketQuote(
         symbol=ascii_text(symbol, "SYM"),
         price=f"{last:,.2f}",
         change=f"{pct:+.2f}%",
         intraday=intraday,
-        is_closed=_market_is_closed(metadata),
+        is_closed=is_closed,
+        trading_progress=1.0 if is_closed else _trading_progress(metadata),
+        delay_minutes=_quote_delay_minutes(metadata, is_closed),
+        is_24h=is_24h,
     )
 
 
-def _fetch_market_quote(symbol: str) -> MarketQuote:
+def _fetch_single_quote(symbol: str, denoise: bool = False) -> MarketQuote:
     try:
         ticker = yf.Ticker(symbol)
         with _quiet_yfinance_logs():
@@ -164,7 +279,7 @@ def _fetch_market_quote(symbol: str) -> MarketQuote:
         if data is None or data.empty:
             raise ValueError("no market data")
         closes = _close_prices(data, symbol)
-        quote = _quote_from_intraday(symbol, closes, ticker.history_metadata or {})
+        quote = _quote_from_intraday(symbol, closes, ticker.history_metadata or {}, denoise)
         logger.info(
             "Market quote fetched: symbol=%s price=%s change=%s intraday_points=%d closed=%s",
             quote.symbol,
@@ -180,6 +295,34 @@ def _fetch_market_quote(symbol: str) -> MarketQuote:
         return quote
 
 
+def _fetch_market_quote(spec: str, denoise_symbols: set[str] | None = None) -> MarketQuote:
+    denoise_symbols = denoise_symbols or set()
+    primary, fallback = parse_symbol_spec(spec)
+    quote = _fetch_single_quote(primary, primary in denoise_symbols)
+    if not fallback:
+        return quote
+
+    # Show the primary symbol (e.g. an index) while its market is open;
+    # once it closes, switch to the fallback symbol (e.g. its futures).
+    if quote.status == "OK" and not quote.is_closed:
+        return quote
+
+    fallback_quote = _fetch_single_quote(fallback, fallback in denoise_symbols)
+    if fallback_quote.status == "OK":
+        # When the primary market is closed we keep showing the fallback (e.g.
+        # futures) as the main quote, and add the primary's price/change as a
+        # secondary line so both values stay visible.
+        if quote.status == "OK":
+            return replace(
+                fallback_quote,
+                secondary_symbol=quote.symbol,
+                secondary_price=quote.price,
+                secondary_change=quote.change,
+            )
+        return fallback_quote
+    return quote
+
+
 def _prev_close_from_info(symbol: str, fallback: float) -> float:
     try:
         info = yf.Ticker(symbol).fast_info
@@ -191,9 +334,13 @@ def _prev_close_from_info(symbol: str, fallback: float) -> float:
     return fallback
 
 
-def fetch_market_quotes(symbols: list[str]) -> list[MarketQuote]:
+def fetch_market_quotes(
+    symbols: list[str], denoise_symbols: list[str] | None = None
+) -> list[MarketQuote]:
     if not symbols:
         return []
+
+    denoise_set = set(denoise_symbols or [])
 
     try:
         cache_dir = Path(".cache") / "yfinance"
@@ -204,7 +351,7 @@ def fetch_market_quotes(symbols: list[str]) -> list[MarketQuote]:
 
     quotes: list[MarketQuote] = []
     for symbol in symbols:
-        quotes.append(_fetch_market_quote(symbol))
+        quotes.append(_fetch_market_quote(symbol, denoise_set))
     logger.info(
         "Market quotes complete: total=%d ok=%d failed=%d",
         len(quotes),

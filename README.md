@@ -20,7 +20,7 @@ Copy-Item config.example.yaml config.yaml
 
 Edit `config.yaml` before running:
 
-- `market.symbols`: yfinance symbols to display
+- `market.symbols`: yfinance symbols to display. Use `PRIMARY(FALLBACK)` (for example `^NDX(NQ=F)`) to show the primary while its market is open and switch to the fallback once it closes; the closed primary's price and change are then shown on a second line.
 - `obsidian.path`: Obsidian vault path
 - `obsidian.projects_dir`: open task folder, usually `1-Projects`
 - `obsidian.archive_dir`: completed task folder, usually `4-Archive`

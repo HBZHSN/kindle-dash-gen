@@ -4,14 +4,18 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 import pandas as pd
 
+from kindle_dash_gen import data as data_module
 from kindle_dash_gen.app import _merge_market
 from PIL import Image, ImageChops, ImageDraw
 
-from kindle_dash_gen.data import CodexUsage, MarketQuote, TodoSummary, WeatherReport, _market_is_closed, _quote_from_intraday
+from kindle_dash_gen.config import DEFAULT_CONFIG, validate_config
+from kindle_dash_gen.data import CodexUsage, MarketQuote, TodoSummary, WeatherReport, _fetch_market_quote, _market_is_closed, _quote_from_intraday
 from kindle_dash_gen.render import DashboardData, _draw_market_symbol, _font, render_dashboard
+from kindle_dash_gen.text import parse_symbol_spec
 
 
 class MarketIntradayTests(unittest.TestCase):
@@ -104,6 +108,78 @@ class MarketIntradayTests(unittest.TestCase):
                     self.assertEqual(plain_path.read_bytes(), curve_path.read_bytes())
                 else:
                     self.assertNotEqual(plain_path.read_bytes(), curve_path.read_bytes())
+
+
+class FallbackSymbolTests(unittest.TestCase):
+    def test_parse_symbol_spec_splits_primary_and_fallback(self) -> None:
+        self.assertEqual(parse_symbol_spec("^NDX(NQ=F)"), ("^NDX", "NQ=F"))
+        self.assertEqual(parse_symbol_spec("  ^NDX ( NQ=F ) "), ("^NDX", "NQ=F"))
+        self.assertEqual(parse_symbol_spec("AAPL"), ("AAPL", None))
+        self.assertEqual(parse_symbol_spec("^NDX(NQ=F"), ("^NDX(NQ=F", None))
+
+    def test_config_validation_accepts_and_normalizes_spec(self) -> None:
+        config = validate_config(DEFAULT_CONFIG)
+        config["market"]["symbols"] = ["^NDX( NQ=F )", "AAPL"]
+        normalized = validate_config(config)
+        self.assertEqual(normalized["market"]["symbols"], ["^NDX(NQ=F)", "AAPL"])
+
+    def test_config_validation_rejects_malformed_spec(self) -> None:
+        config = validate_config(DEFAULT_CONFIG)
+        config["market"]["symbols"] = ["^NDX(NQ=F"]
+        with self.assertRaisesRegex(ValueError, "PRIMARY\\(FALLBACK\\)"):
+            validate_config(config)
+
+    def test_open_primary_shows_primary_only(self) -> None:
+        primary = MarketQuote("^NDX", "30,406.19", "+2.48%", is_closed=False)
+
+        with mock.patch.object(data_module, "_fetch_single_quote", return_value=primary) as fetch:
+            quote = _fetch_market_quote("^NDX(NQ=F)")
+
+        fetch.assert_called_once_with("^NDX", False)
+        self.assertEqual(quote.symbol, "^NDX")
+        self.assertEqual(quote.secondary_price, "")
+
+    def test_closed_primary_shows_fallback_with_primary_secondary(self) -> None:
+        primary = MarketQuote("^NDX", "30,406.19", "+2.48%", is_closed=True)
+        fallback = MarketQuote("NQ=F", "30,500.00", "+0.30%", is_24h=True)
+
+        def fake_fetch(symbol: str, denoise: bool = False) -> MarketQuote:
+            return primary if symbol == "^NDX" else fallback
+
+        with mock.patch.object(data_module, "_fetch_single_quote", side_effect=fake_fetch):
+            quote = _fetch_market_quote("^NDX(NQ=F)")
+
+        self.assertEqual(quote.symbol, "NQ=F")
+        self.assertEqual(quote.price, "30,500.00")
+        self.assertEqual(quote.secondary_symbol, "^NDX")
+        self.assertEqual(quote.secondary_price, "30,406.19")
+        self.assertEqual(quote.secondary_change, "+2.48%")
+
+    def test_secondary_line_changes_render_output(self) -> None:
+        base_quote = MarketQuote("NQ=F", "30,500.00", "+0.30%")
+        secondary_quote = MarketQuote(
+            "NQ=F",
+            "30,500.00",
+            "+0.30%",
+            secondary_symbol="^NDX",
+            secondary_price="30,406.19",
+            secondary_change="+2.48%",
+        )
+        weather = WeatherReport("Shanghai", "25.0 C", "Wind 3.0 km/h")
+        codex = CodexUsage("10% used", "20% used", "yes")
+        todos = TodoSummary([], [])
+        generated_at = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+        base = DashboardData(generated_at, [base_quote], weather, codex, todos)
+        with_secondary = DashboardData(generated_at, [secondary_quote], weather, codex, todos)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for orientation in ("portrait", "landscape"):
+                plain = root / f"{orientation}-plain.png"
+                extra = root / f"{orientation}-secondary.png"
+                render_dashboard(base, plain, orientation)
+                render_dashboard(with_secondary, extra, orientation)
+                self.assertNotEqual(plain.read_bytes(), extra.read_bytes())
 
 
 if __name__ == "__main__":

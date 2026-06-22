@@ -98,7 +98,10 @@ def _merge_with_snapshot(current: DashboardData, previous: DashboardData | None)
 def _collect_dashboard_data(config: dict[str, Any], previous: DashboardData | None) -> DashboardData:
     current = DashboardData(
         generated_at=datetime.now().astimezone(),
-        market=fetch_market_quotes(list(config.get("market", {}).get("symbols") or [])),
+        market=fetch_market_quotes(
+            list(config.get("market", {}).get("symbols") or []),
+            list(config.get("market", {}).get("denoise_symbols") or []),
+        ),
         weather=fetch_weather(config.get("weather", {})),
         codex=fetch_codex_usage(config.get("codex", {})),
         todos=read_todos(config.get("obsidian", {})),

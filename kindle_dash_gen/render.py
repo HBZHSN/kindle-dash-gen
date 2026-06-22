@@ -123,6 +123,41 @@ def _truncate(draw: ImageDraw.ImageDraw, text: object, font: ImageFont.ImageFont
     return (value + suffix) if value else suffix
 
 
+def _fit_font(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    max_width: int,
+    size: int,
+    *,
+    bold: bool = False,
+    cjk: bool = False,
+    min_size: int = 12,
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    font = _font(size, bold=bold, cjk=cjk)
+    while size > min_size and _text_w(draw, text, font) > max_width:
+        size -= 1
+        font = _font(size, bold=bold, cjk=cjk)
+    return font
+
+
+def _draw_dashed_hline(
+    draw: ImageDraw.ImageDraw,
+    x_start: int,
+    x_end: int,
+    y: int,
+    *,
+    fill: int,
+    width: int,
+    dash: int = 14,
+    gap: int = 9,
+) -> None:
+    x = x_start
+    while x < x_end:
+        seg_end = min(x + dash, x_end)
+        draw.line((x, y, seg_end, y), fill=fill, width=width)
+        x += dash + gap
+
+
 def _draw_fit(
     draw: ImageDraw.ImageDraw,
     xy: tuple[int, int],
@@ -255,6 +290,7 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
     symbol_font = _font(36, bold=True)
     price_font = _font(28)
     change_font = _font(28, bold=True)
+    secondary_font = _font(20, bold=True)
 
     sep_x = x1 + 46 + col_w + gap // 2
     draw.line((sep_x, row_top, sep_x, row_top + 4 * row_h), fill=LIGHT, width=1)
@@ -286,8 +322,18 @@ def _draw_market(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quo
             col_w - price_px - change_px - price_gap - 10,
             quote.is_closed,
         )
-        draw.text((rx + col_w - change_px - price_gap, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
-        draw.text((rx + col_w, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
+        has_secondary = bool(quote.secondary_price)
+        price_x = rx + col_w - change_px - price_gap
+        change_x = rx + col_w
+        price_dy = -18 if has_secondary else 0
+        draw.text((price_x, baseline + 4 + price_dy), price, font=price_font, fill=INK, anchor="ra")
+        draw.text((change_x, baseline + 6 + price_dy), change, font=change_font, fill=INK, anchor="ra")
+        if has_secondary:
+            sec_price = _truncate(draw, ascii_text(quote.secondary_price, "--"), secondary_font, price_max)
+            sec_change = _truncate(draw, ascii_text(quote.secondary_change, "--"), secondary_font, change_w)
+            sec_y = baseline + 6 + price_dy + 38
+            draw.text((price_x, sec_y), sec_price, font=secondary_font, fill=INK, anchor="ra")
+            draw.text((change_x, sec_y), sec_change, font=secondary_font, fill=INK, anchor="ra")
 
 
 def _draw_market_symbol(
@@ -297,13 +343,54 @@ def _draw_market_symbol(
     font: ImageFont.FreeTypeFont,
     max_width: int,
     is_closed: bool,
+    delay_minutes: int = 0,
+    is_24h: bool = False,
 ) -> None:
     x, y = xy
     _draw_fit(draw, xy, symbol, font, max_width)
-    if is_closed:
+    marker_gap = 5
+    right_edge = x - marker_gap
+    symbol_h = _text_h(draw, symbol, font)
+    if is_24h and delay_minutes > 0:
+        top = "24"
+        bottom = f"-{delay_minutes}"
+        top_font = _fit_font(draw, top, 40, 18, bold=True)
+        bottom_font = _fit_font(draw, bottom, 40, 18, bold=True)
+        top_h = _text_h(draw, top, top_font)
+        bottom_h = _text_h(draw, bottom, bottom_font)
+        line_gap = 2
+        top_y = y + (symbol_h - (top_h + line_gap + bottom_h)) // 2
+        draw.text(
+            (right_edge - _text_w(draw, top, top_font), top_y),
+            top,
+            font=top_font,
+            fill=INK,
+        )
+        draw.text(
+            (right_edge - _text_w(draw, bottom, bottom_font), top_y + top_h + line_gap),
+            bottom,
+            font=bottom_font,
+            fill=INK,
+        )
+        return
+    marker = ""
+    marker_font = font
+    if is_24h:
+        marker = "24"
+        marker_font = _fit_font(draw, marker, 40, 22, bold=True)
+    elif is_closed:
         marker = "*"
-        marker_gap = 5
-        draw.text((x - _text_w(draw, marker, font) - marker_gap, y), marker, font=font, fill=INK)
+    elif delay_minutes > 0:
+        marker = f"-{delay_minutes}"
+        marker_font = _fit_font(draw, marker, 40, 22, bold=True)
+    if marker:
+        marker_y = y + (symbol_h - _text_h(draw, marker, marker_font)) // 2
+        draw.text(
+            (right_edge - _text_w(draw, marker, marker_font), marker_y),
+            marker,
+            font=marker_font,
+            fill=INK,
+        )
 
 
 def _usage_percent(text: str) -> int:
@@ -576,13 +663,18 @@ def _draw_intraday_curve(
     draw: ImageDraw.ImageDraw,
     rect: tuple[int, int, int, int],
     values: list[float],
+    progress: float = 1.0,
 ) -> None:
     x1, y1, x2, y2 = rect
     if x2 <= x1 or y2 <= y1:
         return
+
+    progress = max(0.0, min(1.0, float(progress)))
+    x2_effective = x1 + max(1, round(progress * (x2 - x1)))
+
     if len(values) < 2:
         cy = (y1 + y2) // 2
-        draw.line((x1, cy, x2, cy), fill=LIGHT, width=1)
+        draw.line((x1, cy, x2_effective, cy), fill=LIGHT, width=1)
         return
 
     finite = [float(value) for value in values if math.isfinite(float(value))]
@@ -598,7 +690,7 @@ def _draw_intraday_curve(
     high += padding
 
     def point(index: int, value: float) -> tuple[int, int]:
-        px = x1 + round(index * (x2 - x1) / (len(finite) - 1))
+        px = x1 + round(index * (x2_effective - x1) / (len(finite) - 1))
         py = y2 - round((value - low) * (y2 - y1) / (high - low))
         return px, py
 
@@ -613,9 +705,10 @@ def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int,
     rows = quotes[:8] or [MarketQuote(symbol="No symbols", price="--", change="--")]
     row_top = y1 + 8
     row_h = max(56, (y2 - row_top - 48) // len(rows))
-    symbol_font = _font(31, bold=True)
-    price_font = _font(26)
-    change_font = _font(28, bold=True)
+    symbol_size = 31
+    price_size = 26
+    change_size = 28
+    symbol_font = _font(symbol_size, bold=True)
     right_edge = x2 - 46
     change_w = 124
     price_w = 126
@@ -629,19 +722,32 @@ def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int,
     for index, quote in enumerate(rows):
         ry = row_top + index * row_h
         if index < len(rows) - 1:
-            draw.line((x1 + 46, ry + row_h - 1, right_edge, ry + row_h - 1), fill=LIGHT, width=1)
+            _draw_dashed_hline(draw, x1 + 46, right_edge, ry + row_h - 1, fill=LIGHT, width=3)
         symbol = ascii_text(quote.symbol, "SYM")
         price_raw = ascii_text(quote.price, "--")
         change_raw = ascii_text(quote.change if quote.status == "OK" else "N/A", "--")
-        change = _truncate(draw, change_raw, change_font, change_w)
-        price = _truncate(draw, price_raw, price_font, price_w)
+        symbol_fit = _fit_font(draw, symbol, symbol_w, symbol_size, bold=True)
+        price_fit = _fit_font(draw, price_raw, price_w, price_size)
+        change_fit = _fit_font(draw, change_raw, change_w, change_size, bold=True)
         baseline = ry + (row_h - _text_h(draw, symbol, symbol_font)) // 2 - 2
-        _draw_market_symbol(draw, (content_left, baseline), symbol, symbol_font, symbol_w, quote.is_closed)
+        symbol_baseline = ry + (row_h - _text_h(draw, symbol, symbol_fit)) // 2 - 2
+        _draw_market_symbol(
+            draw, (content_left, symbol_baseline), symbol, symbol_fit, symbol_w, quote.is_closed, quote.delay_minutes, quote.is_24h
+        )
         chart_h = min(78, row_h - 34)
         chart_top = ry + (row_h - chart_h) // 2
-        _draw_intraday_curve(draw, (chart_left, chart_top, chart_right, chart_top + chart_h), quote.intraday)
-        draw.text((price_left + price_w, baseline + 4), price, font=price_font, fill=INK, anchor="ra")
-        draw.text((right_edge, baseline + 6), change, font=change_font, fill=INK, anchor="ra")
+        _draw_intraday_curve(draw, (chart_left, chart_top, chart_right, chart_top + chart_h), quote.intraday, quote.trading_progress)
+        has_secondary = bool(quote.secondary_price)
+        price_dy = -16 if has_secondary else 0
+        draw.text((price_left + price_w, baseline + 4 + price_dy), price_raw, font=price_fit, fill=INK, anchor="ra")
+        draw.text((right_edge, baseline + 6 + price_dy), change_raw, font=change_fit, fill=INK, anchor="ra")
+        if has_secondary:
+            secondary_font = _font(19, bold=True)
+            sec_price = _truncate(draw, ascii_text(quote.secondary_price, "--"), secondary_font, price_w)
+            sec_change = _truncate(draw, ascii_text(quote.secondary_change, "--"), secondary_font, change_w)
+            sec_y = baseline + 6 + price_dy + 36
+            draw.text((price_left + price_w, sec_y), sec_price, font=secondary_font, fill=INK, anchor="ra")
+            draw.text((right_edge, sec_y), sec_change, font=secondary_font, fill=INK, anchor="ra")
 
 
 def _todo_items(todos: TodoSummary) -> list[tuple[str, bool]]:

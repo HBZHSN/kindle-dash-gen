@@ -22,7 +22,9 @@ market:
     - "MSFT"
     - "BTC-USD"
     - "ETH-USD"
-    - "^NDX"
+    - "^NDX(NQ=F)"  # show ^NDX while open, NQ=F (with ^NDX as a second line) when closed
+    - "GC=F"
+  denoise_symbols:  # only these symbols get glitch/outlier bars dropped from the curve
     - "GC=F"
 
 weather:
