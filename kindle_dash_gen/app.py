@@ -15,7 +15,17 @@ from PIL import Image
 
 from .codex_token import inspect_token, normalize_token
 from .config import load_config, save_codex_token, save_config
-from .data import CodexUsage, MarketQuote, WeatherReport, fetch_codex_usage, fetch_market_quotes, fetch_weather
+from .data import (
+    CODEX_NOT_STARTED_REFRESH_SECONDS,
+    CodexUsage,
+    MarketQuote,
+    WeatherReport,
+    fetch_codex_usage,
+    fetch_market_quotes,
+    fetch_weather,
+    should_refresh_codex,
+)
+from .logbuffer import install_log_buffer
 from .render import DashboardData, render_dashboard
 
 
@@ -93,6 +103,16 @@ def _merge_with_snapshot(current: DashboardData, previous: DashboardData | None)
 
 
 def _collect_dashboard_data(config: dict[str, Any], previous: DashboardData | None) -> DashboardData:
+    previous_codex = previous.codex if previous else None
+    throttle_seconds = int(
+        config.get("codex", {}).get("not_started_refresh_seconds")
+        or CODEX_NOT_STARTED_REFRESH_SECONDS
+    )
+    if should_refresh_codex(previous_codex, throttle_seconds):
+        codex = fetch_codex_usage(config.get("codex", {}))
+    else:
+        codex = previous_codex
+        logger.info("Codex usage throttled: 5H window not started, reusing cached usage")
     current = DashboardData(
         generated_at=datetime.now().astimezone(),
         market=fetch_market_quotes(
@@ -100,7 +120,7 @@ def _collect_dashboard_data(config: dict[str, Any], previous: DashboardData | No
             list(config.get("market", {}).get("denoise_symbols") or []),
         ),
         weather=fetch_weather(config.get("weather", {})),
-        codex=fetch_codex_usage(config.get("codex", {})),
+        codex=codex,
     )
     return _merge_with_snapshot(current, previous)
 
@@ -139,6 +159,7 @@ def _browser_preview(path: Path, orientation: str) -> io.BytesIO:
 def create_app(config_path: str | Path = "config.yaml") -> Flask:
     app = Flask(__name__)
     app.config["DASH_CONFIG_PATH"] = str(config_path)
+    log_buffer = install_log_buffer()
 
     @app.after_request
     def disable_settings_cache(response):
@@ -234,6 +255,23 @@ def create_app(config_path: str | Path = "config.yaml") -> Flask:
         except (OSError, ValueError) as exc:
             logger.warning("Could not create current preview: %s", exc)
             return jsonify({"error": str(exc)}), 500
+
+    @app.get("/api/logs")
+    def get_logs():
+        after_raw = request.args.get("after")
+        limit_raw = request.args.get("limit")
+        try:
+            after = int(after_raw) if after_raw not in (None, "") else None
+            limit = int(limit_raw) if limit_raw not in (None, "") else None
+        except ValueError:
+            return jsonify({"error": "'after' and 'limit' must be integers"}), 400
+        return jsonify(log_buffer.snapshot(after=after, limit=limit))
+
+    @app.delete("/api/logs")
+    def clear_logs():
+        log_buffer.clear()
+        logger.info("Log buffer cleared from settings page")
+        return jsonify(log_buffer.snapshot())
 
     @app.get("/dash.png")
     def dash_png():

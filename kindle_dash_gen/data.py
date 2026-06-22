@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, time, timezone
+from datetime import datetime, timedelta, time as dtime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,8 @@ class CodexUsage:
     token_expires_at: int | None = None
     token_expiring_soon: bool = False
     token_expired: bool = False
+    not_started: bool = False
+    fetched_at: float | None = None
 
 
 @contextmanager
@@ -409,14 +412,28 @@ def fetch_weather(config: dict[str, Any]) -> WeatherReport:
         return report
 
 
+def _window_not_started(window: dict[str, Any] | None) -> bool:
+    """A window that reports used==1 with reset==limit has not begun yet."""
+    if not window:
+        return False
+    used = window.get("used_percent")
+    limit_seconds = window.get("limit_window_seconds")
+    reset_seconds = window.get("reset_after_seconds")
+    return bool(
+        used == 1
+        and limit_seconds
+        and reset_seconds
+        and int(limit_seconds) == int(reset_seconds)
+    )
+
+
 def _format_window(window: dict[str, Any] | None, short_reset: bool = False) -> str:
     if not window:
         return "N/A"
 
     used = window.get("used_percent")
-    limit_seconds = window.get("limit_window_seconds")
     reset_seconds = window.get("reset_after_seconds")
-    if used == 1 and limit_seconds and reset_seconds and int(limit_seconds) == int(reset_seconds):
+    if _window_not_started(window):
         used = 0
         note = "not started"
     else:
@@ -447,10 +464,10 @@ def _work_seconds(start: datetime, end: datetime) -> int:
     local_start = start.astimezone()
     local_end = end.astimezone()
 
-    morning_start = time(9, 0)
-    morning_end = time(11, 30)
-    afternoon_start = time(13, 0)
-    afternoon_end = time(18, 0)
+    morning_start = dtime(9, 0)
+    morning_end = dtime(11, 30)
+    afternoon_start = dtime(13, 0)
+    afternoon_end = dtime(18, 0)
 
     total = 0.0
     day_delta = timedelta(days=1)
@@ -517,6 +534,34 @@ def _window_progress(window: dict[str, Any] | None) -> tuple[int, int]:
     return (t, e)
 
 
+CODEX_NOT_STARTED_REFRESH_SECONDS = 300
+
+
+def should_refresh_codex(
+    previous: CodexUsage | None,
+    throttle_seconds: int = CODEX_NOT_STARTED_REFRESH_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """Decide whether to hit the Codex usage API again.
+
+    When the 5H (primary) window has not started yet we only refresh every
+    ``throttle_seconds`` to avoid hammering the OpenAI endpoint each minute.
+    Once the window is active (or on any error/missing data) we refresh on
+    every build as usual.
+    """
+    if previous is None:
+        return True
+    if previous.status != "OK":
+        return True
+    if not previous.not_started:
+        return True
+    if previous.fetched_at is None:
+        return True
+    if now is None:
+        now = time.time()
+    return (now - previous.fetched_at) >= throttle_seconds
+
+
 def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
     try:
         token = normalize_token(config.get("token"))
@@ -559,6 +604,8 @@ def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
             primary_e=primary_e,
             secondary_t=secondary_t,
             secondary_e=secondary_e,
+            not_started=_window_not_started(primary_window),
+            fetched_at=time.time(),
             **token_fields,
         )
         logger.info(

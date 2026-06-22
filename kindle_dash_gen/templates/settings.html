@@ -82,6 +82,34 @@
       #message { flex-basis:100%; }
       .preview-head { align-items:start; }
     }
+    .logs-panel { margin-top:22px; padding:18px 20px 20px; }
+    .logs-head { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    .logs-head h2 { margin:0; }
+    .logs-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-left:auto; }
+    .logs-controls select,.logs-controls input[type="search"] { width:auto; padding:7px 10px; border:1px solid #b8bab1; border-radius:8px; background:#fff; }
+    .logs-controls input[type="search"] { min-width:170px; }
+    .logs-controls button { padding:8px 12px; }
+    .logs-toggle { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; cursor:pointer; }
+    .logs-toggle input { width:16px; height:16px; accent-color:var(--ink); }
+    .log-wrap { position:relative; }
+    .log-view { height:340px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#15160f; color:#e9e9e2; font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; padding:10px 12px; }
+    .log-line { display:flex; gap:10px; white-space:pre-wrap; overflow-wrap:anywhere; padding:1px 0; }
+    .log-line .lt { color:#8a8c80; flex:0 0 auto; }
+    .log-line .ll { flex:0 0 4.4em; font-weight:700; }
+    .log-line .ln { color:#9aa6cf; flex:0 0 auto; }
+    .log-line .lm { flex:1 1 auto; }
+    .log-line.lv-WARNING .ll { color:#e3b341; } .log-line.lv-WARNING .lm { color:#f2d999; }
+    .log-line.lv-ERROR .ll,.log-line.lv-CRITICAL .ll { color:#ff6b6b; } .log-line.lv-ERROR .lm,.log-line.lv-CRITICAL .lm { color:#ffb3b3; }
+    .log-line.lv-DEBUG { opacity:.7; }
+    .log-empty { color:#8a8c80; }
+    .jump-bottom { position:absolute; right:14px; bottom:14px; padding:6px 12px; border:0; border-radius:999px; background:var(--accent); color:#fff; font-weight:700; box-shadow:0 4px 14px #0005; }
+    .jump-bottom[hidden] { display:none; }
+    .logs-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:10px 2px 0; color:var(--muted); font-size:12px; }
+    .logs-foot .error { color:var(--bad); }
+    @media (max-width:620px) {
+      .logs-controls { margin-left:0; width:100%; }
+      .logs-controls input[type="search"] { flex:1 1 140px; min-width:0; }
+    }
   </style>
 </head>
 <body>
@@ -90,6 +118,34 @@
       <div><div class="eyebrow">KINDLE DASHBOARD</div><h1>配置与预览</h1></div>
       <a href="/dash.png" target="_blank" rel="noreferrer">打开 Kindle 原图</a>
     </header>
+
+    <section class="panel logs-panel">
+      <div class="logs-head">
+        <h2>运行日志</h2>
+        <div class="logs-controls">
+          <label class="logs-toggle"><input id="logs-auto" type="checkbox" checked>自动刷新</label>
+          <select id="logs-level" aria-label="日志级别">
+            <option value="ALL">全部级别</option>
+            <option value="INFO">INFO 及以上</option>
+            <option value="WARNING">WARNING 及以上</option>
+            <option value="ERROR">ERROR 及以上</option>
+          </select>
+          <input id="logs-filter" type="search" placeholder="过滤关键字…" autocomplete="off" spellcheck="false">
+          <button id="logs-top" type="button">跳到顶部</button>
+          <button id="logs-bottom" type="button">跳到底部</button>
+          <button id="logs-refresh" type="button">立即刷新</button>
+          <button id="logs-clear" type="button">清空</button>
+        </div>
+      </div>
+      <div class="log-wrap">
+        <div id="log-view" class="log-view" role="log" aria-live="polite"></div>
+        <button id="jump-bottom" class="jump-bottom" type="button" hidden>↓ 最新</button>
+      </div>
+      <div class="logs-foot">
+        <span id="logs-status">正在读取日志…</span>
+        <span id="logs-count"></span>
+      </div>
+    </section>
 
     <div class="layout">
       <form id="config-form" class="panel form-panel">
@@ -169,6 +225,7 @@
         <p class="preview-foot">预览仅读取当前已生成的 dash.png，每 60 秒自动刷新一次。横向图片会自动旋转后展示，不会触发数据抓取或图片生成。</p>
       </aside>
     </div>
+
     <p class="security">此页面可读取敏感 Token 并修改运行配置，只应在可信局域网中使用，不要暴露到公网。</p>
   </main>
 
@@ -326,6 +383,89 @@
     })();
     setInterval(loadCurrentPreview,60_000);
     setInterval(() => renderTokenInfo(decodeToken($('token').value)),60_000);
+  </script>
+
+  <script>
+    (() => {
+      const view = document.getElementById('log-view');
+      const levelSel = document.getElementById('logs-level');
+      const filterInput = document.getElementById('logs-filter');
+      const autoCheck = document.getElementById('logs-auto');
+      const statusEl = document.getElementById('logs-status');
+      const countEl = document.getElementById('logs-count');
+      const jumpBtn = document.getElementById('jump-bottom');
+
+      const LEVELS = { DEBUG:10, INFO:20, WARNING:30, ERROR:40, CRITICAL:50 };
+      const MAX_ENTRIES = 5000;
+      let entries = [];
+      let cursor = 0;
+      let follow = true;
+      let timer = null;
+
+      const fmtTime = (epoch) => new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(epoch * 1000));
+      const atBottom = () => view.scrollHeight - view.scrollTop - view.clientHeight < 24;
+      const scrollToBottom = () => { view.scrollTop = view.scrollHeight; };
+      const escapeHtml = (text) => { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; };
+
+      function passes(entry) {
+        const min = levelSel.value === 'ALL' ? 0 : (LEVELS[levelSel.value] || 0);
+        if ((LEVELS[entry.level] || 0) < min) return false;
+        const q = filterInput.value.trim().toLowerCase();
+        return !q || `${entry.name} ${entry.message}`.toLowerCase().includes(q);
+      }
+
+      function render() {
+        const shown = entries.filter(passes);
+        view.innerHTML = shown.length
+          ? shown.map(e => `<div class="log-line lv-${e.level}"><span class="lt">${fmtTime(e.time)}</span><span class="ll">${e.level}</span><span class="ln">${escapeHtml(e.name)}</span><span class="lm">${escapeHtml(e.message)}</span></div>`).join('')
+          : '<div class="log-empty">暂无匹配的日志。</div>';
+        countEl.textContent = `${shown.length} / ${entries.length} 条`;
+        if (follow) scrollToBottom();
+        jumpBtn.hidden = follow || atBottom();
+      }
+
+      async function poll(reset = false) {
+        try {
+          const after = reset ? '' : cursor;
+          const response = await fetch(`/api/logs?after=${after}&t=${Date.now()}`, {cache:'no-store'});
+          if (!response.ok) throw new Error('日志读取失败');
+          const data = await response.json();
+          if (reset) { entries = []; }
+          if (Array.isArray(data.entries) && data.entries.length) {
+            entries.push(...data.entries);
+            if (entries.length > MAX_ENTRIES) entries = entries.slice(-MAX_ENTRIES);
+          }
+          cursor = Number.isFinite(data.last_seq) ? data.last_seq : cursor;
+          statusEl.textContent = `已更新 ${fmtTime(Date.now() / 1000)} · 缓冲上限 ${data.capacity || 0} 条`;
+          statusEl.classList.remove('error');
+          render();
+        } catch (error) {
+          statusEl.textContent = error.message;
+          statusEl.classList.add('error');
+        }
+      }
+
+      function schedule() {
+        clearInterval(timer);
+        if (autoCheck.checked) timer = setInterval(() => poll(false), 3000);
+      }
+
+      view.addEventListener('scroll', () => { follow = atBottom(); jumpBtn.hidden = follow; });
+      jumpBtn.addEventListener('click', () => { follow = true; scrollToBottom(); jumpBtn.hidden = true; });
+      document.getElementById('logs-bottom').addEventListener('click', () => { follow = true; scrollToBottom(); jumpBtn.hidden = true; });
+      document.getElementById('logs-top').addEventListener('click', () => { follow = false; view.scrollTop = 0; jumpBtn.hidden = false; });
+      document.getElementById('logs-refresh').addEventListener('click', () => poll(false));
+      document.getElementById('logs-clear').addEventListener('click', async () => {
+        try { await fetch('/api/logs', {method:'DELETE'}); } catch (_) {}
+        entries = []; cursor = 0; follow = true; render();
+      });
+      levelSel.addEventListener('change', render);
+      filterInput.addEventListener('input', render);
+      autoCheck.addEventListener('change', schedule);
+
+      poll(true);
+      schedule();
+    })();
   </script>
 </body>
 </html>

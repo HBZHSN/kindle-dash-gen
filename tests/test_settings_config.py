@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -111,6 +112,33 @@ class SettingsApiTests(unittest.TestCase):
             self.assertEqual(client.post("/api/preview", json={"config": config}).status_code, 405)
             self.assertEqual(output.read_bytes(), original)
             self.assertFalse(Path(config["cache"]["data_path"]).exists())
+
+
+class LogsApiTests(unittest.TestCase):
+    def test_logs_endpoint_returns_buffered_records_with_incremental_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("server:\n  port: 5678\n", encoding="utf-8")
+            client = create_app(path).test_client()
+
+            logging.getLogger("tests.logbuffer").info("marker-alpha %s", 1)
+            response = client.get("/api/logs")
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertTrue(any("marker-alpha 1" in entry["message"] for entry in data["entries"]))
+            self.assertGreaterEqual(data["last_seq"], 1)
+            cursor = data["last_seq"]
+
+            logging.getLogger("tests.logbuffer").warning("marker-beta")
+            after = client.get(f"/api/logs?after={cursor}").get_json()
+            messages = [entry["message"] for entry in after["entries"]]
+            self.assertIn("marker-beta", messages)
+            self.assertNotIn("marker-alpha 1", messages)
+
+            self.assertEqual(client.get("/api/logs?after=notint").status_code, 400)
+
+            cleared = client.delete("/api/logs").get_json()
+            self.assertFalse(any("marker-beta" in entry["message"] for entry in cleared["entries"]))
 
 
 if __name__ == "__main__":

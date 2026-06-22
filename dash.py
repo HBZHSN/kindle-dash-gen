@@ -5,10 +5,12 @@ import logging
 
 from kindle_dash_gen.app import build_dashboard, create_app, start_scheduler
 from kindle_dash_gen.config import load_config
+from kindle_dash_gen.logbuffer import install_log_buffer
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    install_log_buffer()
 
     parser = argparse.ArgumentParser(description="Generate and serve a Kindle dashboard PNG.")
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML.")
