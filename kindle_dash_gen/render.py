@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from .data import CodexUsage, MarketQuote, TodoSummary, WeatherReport
+from .data import CodexUsage, MarketQuote, WeatherReport
 from .text import ascii_text
 
 
@@ -67,7 +67,6 @@ class DashboardData:
     market: list[MarketQuote]
     weather: WeatherReport
     codex: CodexUsage
-    todos: TodoSummary
 
 
 def _font(size: int, bold: bool = False, cjk: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -748,57 +747,6 @@ def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int,
             sec_y = baseline + 6 + price_dy + 36
             draw.text((price_left + price_w, sec_y), sec_price, font=secondary_font, fill=INK, anchor="ra")
             draw.text((right_edge, sec_y), sec_change, font=secondary_font, fill=INK, anchor="ra")
-
-
-def _todo_items(todos: TodoSummary) -> list[tuple[str, bool]]:
-    open_items = [(item, False) for item in todos.open_items[:6]]
-    done_slots = max(0, 6 - len(open_items))
-    done = [(item, True) for item in todos.done_items[:done_slots]]
-    items = open_items + done
-    if not items:
-        return [("No open tasks", False)]
-    return items[:6]
-
-
-def _draw_todos(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], todos: TodoSummary) -> None:
-    x1, y1, x2, y2 = rect
-    items = _todo_items(todos)
-    content_y = _section_title(draw, rect, "Today", f"{len(items)} Tasks")
-    row_top = content_y + 14
-    row_h = max(38, (y2 - row_top - 30) // 3)
-    gap = 52
-    col_w = ((x2 - x1) - 92 - gap) // 2
-    text_font = _font(24, cjk=True)
-    index_font = _font(17, bold=True)
-
-    for index, (item, done) in enumerate(items, start=1):
-        col = (index - 1) % 2
-        row = (index - 1) // 2
-        rx = x1 + 46 + col * (col_w + gap)
-        ry = row_top + row * row_h
-        if row < 2:
-            draw.line((rx, ry + row_h - 1, rx + col_w, ry + row_h - 1), fill=LIGHT, width=1)
-
-        box = (rx, ry + (row_h - 35) // 2, rx + 35, ry + (row_h - 35) // 2 + 35)
-        if done:
-            draw.rectangle(box, outline=INK, width=LINE_W)
-            fill = INK
-        else:
-            draw.rectangle(box, fill=INK)
-            fill = PAPER
-        draw.text((rx + 17, box[1] + 8), str(index), fill=fill, font=index_font, anchor="ma")
-
-        tx = rx + 50
-        ty = ry + (row_h - _text_h(draw, "A", text_font)) // 2 - 1
-        text = _truncate(draw, item, text_font, col_w - 55, sanitize=False)
-        draw.text((tx, ty), text, fill=INK, font=text_font)
-        if done:
-            line_y = ty + _text_h(draw, text, text_font) // 2 + 2
-            draw.line((tx, line_y, tx + _text_w(draw, text, text_font), line_y), fill=INK, width=2)
-
-    if todos.status != "OK":
-        status_font = _font(14)
-        _draw_fit(draw, (x1 + 46, y2 - 24), f"TODO STATUS: {todos.status}", status_font, x2 - x1 - 92, fill=MID)
 
 
 def _draw_footer(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], generated_at: datetime) -> None:

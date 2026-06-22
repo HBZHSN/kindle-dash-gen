@@ -37,12 +37,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "denoise_symbols": [],
     },
     "weather": {"location": "Shanghai", "latitude": None, "longitude": None},
-    "obsidian": {
-        "path": "",
-        "projects_dir": "1-Projects",
-        "archive_dir": "4-Archive",
-        "max_items": 8,
-    },
     "codex": {
         "token": "",
         "usage_url": "https://chatgpt.com/backend-api/wham/usage",
@@ -184,12 +178,6 @@ def validate_config(value: object) -> dict[str, Any]:
     weather["longitude"] = _optional_float(weather.get("longitude"), "weather.longitude", -180, 180)
     if (weather["latitude"] is None) != (weather["longitude"] is None):
         raise ValueError("weather.latitude and weather.longitude must be set together")
-
-    obsidian = config["obsidian"]
-    obsidian["path"] = _string(obsidian.get("path"), "obsidian.path", allow_empty=True)
-    obsidian["projects_dir"] = _string(obsidian.get("projects_dir"), "obsidian.projects_dir")
-    obsidian["archive_dir"] = _string(obsidian.get("archive_dir"), "obsidian.archive_dir")
-    obsidian["max_items"] = _integer(obsidian.get("max_items"), "obsidian.max_items", 1, 100)
 
     codex = config["codex"]
     codex["token"] = normalize_token(codex.get("token"))

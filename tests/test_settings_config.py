@@ -11,7 +11,7 @@ from PIL import Image
 
 from kindle_dash_gen.app import create_app
 from kindle_dash_gen.config import DEFAULT_CONFIG, save_config, validate_config
-from kindle_dash_gen.data import CodexUsage, MarketQuote, TodoSummary, WeatherReport
+from kindle_dash_gen.data import CodexUsage, MarketQuote, WeatherReport
 from kindle_dash_gen.render import DashboardData, render_dashboard
 
 
@@ -21,7 +21,6 @@ def sample_data() -> DashboardData:
         market=[MarketQuote("TEST", "1.00", "+0.00%")],
         weather=WeatherReport("Shanghai", "25.0 C", "Wind 3.0 km/h"),
         codex=CodexUsage("10% used", "20% used", "yes"),
-        todos=TodoSummary([], []),
     )
 
 

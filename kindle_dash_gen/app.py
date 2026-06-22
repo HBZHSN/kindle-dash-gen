@@ -15,7 +15,7 @@ from PIL import Image
 
 from .codex_token import inspect_token, normalize_token
 from .config import load_config, save_codex_token, save_config
-from .data import CodexUsage, MarketQuote, TodoSummary, WeatherReport, fetch_codex_usage, fetch_market_quotes, fetch_weather, read_todos
+from .data import CodexUsage, MarketQuote, WeatherReport, fetch_codex_usage, fetch_market_quotes, fetch_weather
 from .render import DashboardData, render_dashboard
 
 
@@ -34,7 +34,6 @@ def _load_snapshot(path: Path) -> DashboardData | None:
             market=[MarketQuote(**item) for item in raw.get("market", [])],
             weather=WeatherReport(**raw["weather"]),
             codex=CodexUsage(**raw["codex"]),
-            todos=TodoSummary(**raw["todos"]),
         )
     except Exception:
         return None
@@ -47,7 +46,6 @@ def _write_snapshot(path: Path, data: DashboardData) -> None:
         "market": [asdict(item) for item in data.market],
         "weather": asdict(data.weather),
         "codex": asdict(data.codex),
-        "todos": asdict(data.todos),
     }
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
@@ -91,7 +89,6 @@ def _merge_with_snapshot(current: DashboardData, previous: DashboardData | None)
         market=_merge_market(current.market, previous.market),
         weather=previous.weather if current.weather.status != "OK" and previous.weather.status == "OK" else current.weather,
         codex=codex,
-        todos=previous.todos if current.todos.status not in {"OK", "No vault"} and previous.todos.status == "OK" else current.todos,
     )
 
 
@@ -104,7 +101,6 @@ def _collect_dashboard_data(config: dict[str, Any], previous: DashboardData | No
         ),
         weather=fetch_weather(config.get("weather", {})),
         codex=fetch_codex_usage(config.get("codex", {})),
-        todos=read_todos(config.get("obsidian", {})),
     )
     return _merge_with_snapshot(current, previous)
 

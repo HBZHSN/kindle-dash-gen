@@ -13,7 +13,7 @@ from kindle_dash_gen.app import _merge_market
 from PIL import Image, ImageChops, ImageDraw
 
 from kindle_dash_gen.config import DEFAULT_CONFIG, validate_config
-from kindle_dash_gen.data import CodexUsage, MarketQuote, TodoSummary, WeatherReport, _fetch_market_quote, _market_is_closed, _quote_from_intraday
+from kindle_dash_gen.data import CodexUsage, MarketQuote, WeatherReport, _fetch_market_quote, _market_is_closed, _quote_from_intraday
 from kindle_dash_gen.render import DashboardData, _draw_market_symbol, _font, render_dashboard
 from kindle_dash_gen.text import parse_symbol_spec
 
@@ -87,14 +87,12 @@ class MarketIntradayTests(unittest.TestCase):
             market=[MarketQuote("TEST", "101.00", "+1.00%")],
             weather=WeatherReport("Shanghai", "25.0 C", "Wind 3.0 km/h"),
             codex=CodexUsage("10% used", "20% used", "yes"),
-            todos=TodoSummary([], []),
         )
         with_curve = DashboardData(
             generated_at=base.generated_at,
             market=[MarketQuote("TEST", "101.00", "+1.00%", intraday=[0.0, 0.7, -0.2, 1.0])],
             weather=base.weather,
             codex=base.codex,
-            todos=base.todos,
         )
 
         with tempfile.TemporaryDirectory() as directory:
@@ -167,10 +165,9 @@ class FallbackSymbolTests(unittest.TestCase):
         )
         weather = WeatherReport("Shanghai", "25.0 C", "Wind 3.0 km/h")
         codex = CodexUsage("10% used", "20% used", "yes")
-        todos = TodoSummary([], [])
         generated_at = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
-        base = DashboardData(generated_at, [base_quote], weather, codex, todos)
-        with_secondary = DashboardData(generated_at, [secondary_quote], weather, codex, todos)
+        base = DashboardData(generated_at, [base_quote], weather, codex)
+        with_secondary = DashboardData(generated_at, [secondary_quote], weather, codex)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

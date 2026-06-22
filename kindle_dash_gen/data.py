@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 import math
-import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta, time, timezone
+from datetime import datetime, timedelta, time, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,13 +56,6 @@ class CodexUsage:
     token_expires_at: int | None = None
     token_expiring_soon: bool = False
     token_expired: bool = False
-
-
-@dataclass
-class TodoSummary:
-    open_items: list[str]
-    done_items: list[str]
-    status: str = "OK"
 
 
 @contextmanager
@@ -586,89 +578,3 @@ def fetch_codex_usage(config: dict[str, Any]) -> CodexUsage:
         )
         logger.warning("Codex usage failed: error=%s", usage.status)
         return usage
-
-
-_DATE_PATTERNS = [
-    re.compile(r"^\s*(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})(?=\D|$)"),
-    re.compile(r"^\s*(?P<year>\d{4})[-_ .](?P<month>\d{1,2})[-_ .](?P<day>\d{1,2})(?=\D|$)"),
-    re.compile(r"^\s*(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})(?=\D|$)"),
-    re.compile(r"^\s*(?P<month>\d{1,2})[-_ .](?P<day>\d{1,2})(?=\D|$)"),
-]
-
-
-def _clean_task_name(name: str, fallback: str) -> str:
-    cleaned = re.sub(r"^\s*[0-9]{4}[-_ .]?[0-9]{1,2}[-_ .]?[0-9]{1,2}[-_ .]*", "", name)
-    cleaned = re.sub(r"^\s*[0-9]{6,8}[-_ .]*", "", cleaned)
-    cleaned = re.sub(r"^\s*[0-9]{1,2}[-_ .][0-9]{1,2}[-_ .]*", "", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned or fallback
-
-
-def _task_date_from_name(name: str, fallback: date) -> date:
-    for pattern in _DATE_PATTERNS:
-        match = pattern.match(name)
-        if not match:
-            continue
-        try:
-            year_text = match.groupdict().get("year")
-            year = int(year_text) if year_text else fallback.year
-            if year < 100:
-                year += 2000
-            return date(year, int(match.group("month")), int(match.group("day")))
-        except ValueError:
-            continue
-    return fallback
-
-
-def _task_label(task_date: date, task_name: str) -> str:
-    return f"{task_date:%m-%d}  {task_name}"
-
-
-def _list_child_names(root: Path, max_items: int, fallback_prefix: str) -> list[str]:
-    if not root.exists() or not root.is_dir():
-        logger.info("Todo directory missing: path=%s", root)
-        return []
-
-    items: list[tuple[date, str, str]] = []
-    for index, path in enumerate(root.iterdir(), start=1):
-        try:
-            fallback_date = datetime.fromtimestamp(path.stat().st_mtime).date()
-        except OSError:
-            fallback_date = datetime.now().date()
-        raw_name = path.stem if path.is_file() else path.name
-        task_date = _task_date_from_name(raw_name, fallback_date)
-        task_name = _clean_task_name(raw_name, f"{fallback_prefix} {index}")
-        items.append((task_date, task_name, raw_name.lower()))
-
-    items.sort(key=lambda item: (item[0], item[2]), reverse=True)
-    labels = [_task_label(task_date, task_name) for task_date, task_name, _ in items[:max_items]]
-    logger.info("Todo directory read: path=%s total=%d selected=%d", root, len(items), len(labels))
-    return labels
-
-
-def read_todos(config: dict[str, Any]) -> TodoSummary:
-    vault_raw = config.get("path") or ""
-    if not vault_raw:
-        return TodoSummary(open_items=[], done_items=[], status="No vault")
-
-    vault = Path(vault_raw)
-    max_items = int(config.get("max_items") or 8)
-    projects = vault / str(config.get("projects_dir") or "1-Projects")
-    archive = vault / str(config.get("archive_dir") or "4-Archive")
-    try:
-        summary = TodoSummary(
-            open_items=_list_child_names(projects, max_items, "Task"),
-            done_items=_list_child_names(archive, max_items, "Done"),
-        )
-        logger.info(
-            "Todos read: open=%d done=%d open_items=%s done_items=%s",
-            len(summary.open_items),
-            len(summary.done_items),
-            summary.open_items,
-            summary.done_items,
-        )
-        return summary
-    except Exception as exc:
-        summary = TodoSummary(open_items=[], done_items=[], status=ascii_text(exc, "Failed"))
-        logger.warning("Todos failed: error=%s", summary.status)
-        return summary

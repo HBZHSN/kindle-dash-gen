@@ -117,16 +117,6 @@
         </section>
 
         <section class="section">
-          <div class="section-head"><h2>Obsidian 待办</h2><span class="section-note">目录下的文件或文件夹都会作为任务</span></div>
-          <div class="grid">
-            <div class="field full"><label for="obsidian-path">Vault 路径</label><input id="obsidian-path" placeholder="D:/Notes/Obsidian"></div>
-            <div class="field"><label for="projects-dir">进行中目录</label><input id="projects-dir" required></div>
-            <div class="field"><label for="archive-dir">已完成目录</label><input id="archive-dir" required></div>
-            <div class="field"><label for="max-items">最大显示数量</label><input id="max-items" type="number" min="1" max="100" required></div>
-          </div>
-        </section>
-
-        <section class="section">
           <div class="section-head"><h2>Codex 用量</h2><span class="section-note">Token 仅保存到本机 config.yaml</span></div>
           <div class="grid">
             <div class="field full">
@@ -206,7 +196,6 @@
       config.cache = { ...(config.cache || {}), data_path:$('cache-path').value.trim() };
       config.market = { ...(config.market || {}), symbols:$('symbols').value.split(/\r?\n|,/).map(v => v.trim()).filter(Boolean) };
       config.weather = { ...(config.weather || {}), location:$('weather-location').value.trim(), latitude:numberOrNull($('latitude').value), longitude:numberOrNull($('longitude').value) };
-      config.obsidian = { ...(config.obsidian || {}), path:$('obsidian-path').value.trim(), projects_dir:$('projects-dir').value.trim(), archive_dir:$('archive-dir').value.trim(), max_items:Number($('max-items').value) };
       config.codex = { ...(config.codex || {}), token:bareToken($('token').value), usage_url:$('usage-url').value.trim(), timeout_seconds:Number($('timeout').value) };
       config.schedule = { ...(config.schedule || {}), enabled:$('schedule-enabled').checked, cron:$('cron').value.trim(), timezone:$('timezone').value.trim() };
       config.server = { ...(config.server || {}), host:$('server-host').value.trim(), port:Number($('server-port').value) };
@@ -221,10 +210,6 @@
       $('weather-location').value = config.weather.location || '';
       $('latitude').value = config.weather.latitude ?? '';
       $('longitude').value = config.weather.longitude ?? '';
-      $('obsidian-path').value = config.obsidian.path || '';
-      $('projects-dir').value = config.obsidian.projects_dir;
-      $('archive-dir').value = config.obsidian.archive_dir;
-      $('max-items').value = config.obsidian.max_items;
       $('token').value = config.codex.token || '';
       $('usage-url').value = config.codex.usage_url;
       $('timeout').value = config.codex.timeout_seconds;

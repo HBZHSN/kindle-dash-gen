@@ -7,3 +7,8 @@ config.yaml
 dash.png
 dash_check.png
 *.log
+
+AGENTS.md
+preview.html
+quoteGet.py
+需求.txt

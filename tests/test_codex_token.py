@@ -13,7 +13,7 @@ from PIL import Image
 from kindle_dash_gen.app import create_app
 from kindle_dash_gen.codex_token import inspect_token, normalize_token
 from kindle_dash_gen.config import save_codex_token
-from kindle_dash_gen.data import CodexUsage, MarketQuote, TodoSummary, WeatherReport
+from kindle_dash_gen.data import CodexUsage, MarketQuote, WeatherReport
 from kindle_dash_gen.render import DashboardData, render_dashboard
 
 
@@ -90,7 +90,6 @@ class RenderContractTests(unittest.TestCase):
             market=[MarketQuote("TEST", "1.00", "+0.00%")],
             weather=WeatherReport("Shanghai", "25.0 C", "Wind 3.0 km/h"),
             codex=CodexUsage("10% used", "20% used", "yes", token_expiring_soon=True),
-            todos=TodoSummary([], []),
         )
         with tempfile.TemporaryDirectory() as directory:
             for orientation in ("portrait", "landscape"):
