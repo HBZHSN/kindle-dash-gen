@@ -17,7 +17,7 @@
 
 | 竖屏 | 横屏 |
 | :---: | :---: |
-| <img src="example.png" width="320" alt="竖屏仪表盘样例"> | <img src="dash.png" width="320" alt="横屏仪表盘样例"> |
+| <img src="img/sample-portrait.png" width="320" alt="竖屏仪表盘样例"> | <img src="img/sample-landscape.png" width="320" alt="横屏仪表盘样例"> |
 | `output.orientation: portrait` | `output.orientation: landscape` |
 
 ## 安装

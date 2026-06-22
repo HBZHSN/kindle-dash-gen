@@ -18,7 +18,7 @@ pre-rotated so it reads correctly when the Kindle is held sideways.
 
 | Portrait | Landscape |
 | :---: | :---: |
-| <img src="example.png" width="320" alt="Portrait dashboard sample"> | <img src="dash.png" width="320" alt="Landscape dashboard sample"> |
+| <img src="img/sample-portrait.png" width="320" alt="Portrait dashboard sample"> | <img src="img/sample-landscape.png" width="320" alt="Landscape dashboard sample"> |
 | `output.orientation: portrait` | `output.orientation: landscape` |
 
 ## Setup
