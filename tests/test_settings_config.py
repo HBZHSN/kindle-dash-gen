@@ -51,6 +51,25 @@ class FullConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid schedule"):
             validate_config(config)
 
+    def test_custom_market_source_is_normalized(self) -> None:
+        config = validate_config(DEFAULT_CONFIG)
+        config["market"]["symbols"] = ["JC1.LW"]
+        config["market"]["custom_symbols"] = {
+            " JC1.LW ": {
+                "url": " http://example.test/api/data ",
+                "product": " jc1 ",
+                "sessions": ["09:00-11:30", "13:00-15:00"],
+            }
+        }
+
+        normalized = validate_config(config)
+
+        source = normalized["market"]["custom_symbols"]["JC1.LW"]
+        self.assertEqual(source["url"], "http://example.test/api/data")
+        self.assertEqual(source["product"], "jc1")
+        self.assertEqual(source["timeout_seconds"], 10)
+        self.assertEqual(source["lookback_days"], 30)
+
 
 class SettingsApiTests(unittest.TestCase):
     def test_complete_config_api_reads_and_atomically_updates_runtime_yaml(self) -> None:

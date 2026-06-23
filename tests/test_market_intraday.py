@@ -13,12 +13,80 @@ from kindle_dash_gen.app import _merge_market
 from PIL import Image, ImageChops, ImageDraw
 
 from kindle_dash_gen.config import DEFAULT_CONFIG, validate_config
-from kindle_dash_gen.data import CodexUsage, MarketQuote, WeatherReport, _fetch_market_quote, _market_is_closed, _quote_from_intraday
-from kindle_dash_gen.render import DashboardData, _draw_market_symbol, _font, render_dashboard
+from kindle_dash_gen.data import CodexUsage, MarketQuote, WeatherReport, _fetch_custom_quote, _fetch_market_quote, _market_is_closed, _quote_from_intraday
+from kindle_dash_gen.render import DashboardData, _draw_market_landscape, _draw_market_symbol, _font, render_dashboard
 from kindle_dash_gen.text import parse_symbol_spec
 
 
 class MarketIntradayTests(unittest.TestCase):
+    def test_custom_quote_bypasses_proxy_and_walks_back_to_latest_data(self) -> None:
+        missing = mock.Mock(status_code=404)
+        empty = mock.Mock(status_code=200)
+        empty.json.return_value = {"product": "jc1", "date": "20260622", "count": 0, "data": []}
+        found = mock.Mock(status_code=200)
+        found.json.return_value = {
+            "product": "jc1",
+            "date": "20260621",
+            "count": 2,
+            "data": [
+                {"Time": "09:00:00", "Return": "0.0100", "Exposure": "1.40"},
+                {"Time": "09:02:00", "Return": "0.0200", "Exposure": "1.44"},
+            ],
+        }
+        http = mock.Mock()
+        http.get.side_effect = [missing, empty, found]
+        config = {
+            "url": "http://example.test/api/data",
+            "product": "jc1",
+            "timeout_seconds": 7,
+            "lookback_days": 5,
+            "timezone": "Asia/Shanghai",
+            "sessions": ["09:00-11:30", "13:00-15:00"],
+        }
+
+        with mock.patch.object(data_module.requests, "Session", return_value=http):
+            quote = _fetch_custom_quote(
+                "JC1.LW",
+                config,
+                now=datetime(2026, 6, 23, 14, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertFalse(http.trust_env)
+        self.assertEqual([call.kwargs["params"]["date"] for call in http.get.call_args_list], ["20260623", "20260622", "20260621"])
+        self.assertEqual(quote.symbol, "JC1.LW")
+        self.assertEqual(quote.price, "144%")
+        self.assertEqual(quote.change, "+2.00%")
+        self.assertEqual(len(quote.intraday), 270)
+        self.assertEqual(quote.intraday[:3], [1.0, None, 2.0])
+        self.assertTrue(quote.is_closed)
+        self.assertEqual(quote.trading_progress, 1.0)
+
+    def test_custom_quote_uses_split_a_share_sessions(self) -> None:
+        response = mock.Mock(status_code=200)
+        response.json.return_value = {
+            "data": [{"Time": "10:00:00", "Return": "0.005", "Exposure": "1.44"}]
+        }
+        http = mock.Mock()
+        http.get.return_value = response
+        config = {
+            "url": "http://example.test/api/data",
+            "product": "jc1",
+            "timezone": "Asia/Shanghai",
+            "sessions": ["09:00-11:30", "13:00-15:00"],
+        }
+
+        with mock.patch.object(data_module.requests, "Session", return_value=http):
+            quote = _fetch_custom_quote(
+                "JC1.LW",
+                config,
+                now=datetime.fromisoformat("2026-06-23T12:00:00+08:00"),
+            )
+
+        self.assertFalse(quote.is_closed)
+        self.assertAlmostEqual(quote.trading_progress, 2.5 / 4.5)
+        self.assertEqual(len(quote.intraday), 150)
+        self.assertEqual(quote.intraday[60], 0.5)
+
     def test_market_closed_state_uses_yahoo_state_and_session_end(self) -> None:
         now = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
 
@@ -106,6 +174,15 @@ class MarketIntradayTests(unittest.TestCase):
                     self.assertEqual(plain_path.read_bytes(), curve_path.read_bytes())
                 else:
                     self.assertNotEqual(plain_path.read_bytes(), curve_path.read_bytes())
+
+    def test_landscape_renders_more_than_eight_symbols(self) -> None:
+        image = Image.new("L", (1440, 1080), 255)
+        quotes = [MarketQuote(f"SYM{index}", "100.00", "+1.00%") for index in range(9)]
+
+        with mock.patch("kindle_dash_gen.render._draw_market_symbol") as draw_symbol:
+            _draw_market_landscape(ImageDraw.Draw(image), (612, 8, 1432, 1072), quotes)
+
+        self.assertEqual(draw_symbol.call_count, 9)
 
 
 class FallbackSymbolTests(unittest.TestCase):

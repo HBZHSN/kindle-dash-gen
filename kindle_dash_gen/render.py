@@ -661,7 +661,7 @@ def _draw_focus_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, 
 def _draw_intraday_curve(
     draw: ImageDraw.ImageDraw,
     rect: tuple[int, int, int, int],
-    values: list[float],
+    values: list[float | None],
     progress: float = 1.0,
 ) -> None:
     x1, y1, x2, y2 = rect
@@ -676,11 +676,18 @@ def _draw_intraday_curve(
         draw.line((x1, cy, x2_effective, cy), fill=LIGHT, width=1)
         return
 
-    finite = [float(value) for value in values if math.isfinite(float(value))]
+    finite: list[tuple[int, float]] = []
+    for index, value in enumerate(values):
+        if value is None:
+            continue
+        number = float(value)
+        if math.isfinite(number):
+            finite.append((index, number))
     if len(finite) < 2:
         return
-    low = min(min(finite), 0.0)
-    high = max(max(finite), 0.0)
+    finite_values = [value for _, value in finite]
+    low = min(min(finite_values), 0.0)
+    high = max(max(finite_values), 0.0)
     if high == low:
         high += 0.5
         low -= 0.5
@@ -689,21 +696,23 @@ def _draw_intraday_curve(
     high += padding
 
     def point(index: int, value: float) -> tuple[int, int]:
-        px = x1 + round(index * (x2_effective - x1) / (len(finite) - 1))
+        px = x1 + round(index * (x2_effective - x1) / (len(values) - 1))
         py = y2 - round((value - low) * (y2 - y1) / (high - low))
         return px, py
 
     zero_y = point(0, 0.0)[1]
     draw.line((x1, zero_y, x2, zero_y), fill=LIGHT, width=3)
-    points = [point(index, value) for index, value in enumerate(finite)]
+    # Preserve each sample's time-axis position. Missing minutes are skipped,
+    # so Pillow draws a straight segment between the surrounding observations.
+    points = [point(index, value) for index, value in finite]
     draw.line(points, fill=INK, width=3, joint="curve")
 
 
 def _draw_market_landscape(draw: ImageDraw.ImageDraw, rect: tuple[int, int, int, int], quotes: list[MarketQuote]) -> None:
     x1, y1, x2, y2 = rect
-    rows = quotes[:8] or [MarketQuote(symbol="No symbols", price="--", change="--")]
+    rows = quotes or [MarketQuote(symbol="No symbols", price="--", change="--")]
     row_top = y1 + 8
-    row_h = max(56, (y2 - row_top - 48) // len(rows))
+    row_h = max(56, (y2 - row_top - 8) // len(rows))
     symbol_size = 31
     price_size = 26
     change_size = 28

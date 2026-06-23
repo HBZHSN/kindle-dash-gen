@@ -118,6 +118,7 @@ def _collect_dashboard_data(config: dict[str, Any], previous: DashboardData | No
         market=fetch_market_quotes(
             list(config.get("market", {}).get("symbols") or []),
             list(config.get("market", {}).get("denoise_symbols") or []),
+            dict(config.get("market", {}).get("custom_symbols") or {}),
         ),
         weather=fetch_weather(config.get("weather", {})),
         codex=codex,

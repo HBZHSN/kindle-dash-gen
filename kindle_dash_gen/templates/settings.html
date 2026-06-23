@@ -160,7 +160,8 @@
 
         <section class="section">
           <div class="section-head"><h2>市场</h2><span class="section-note">最多 16 个代码</span></div>
-          <div class="field"><label for="symbols">Yahoo Finance 代码，每行一个</label><textarea id="symbols" spellcheck="false" required></textarea></div>
+          <div class="field"><label for="symbols">行情代码，每行一个</label><textarea id="symbols" spellcheck="false" required></textarea></div>
+          <div class="field" style="margin-top:15px"><label for="custom-symbols">自定义接口（JSON，以显示代码为键）</label><textarea id="custom-symbols" spellcheck="false" required></textarea><div class="hint">自定义代码仍需加入上方列表。请求不会使用系统代理。</div></div>
         </section>
 
         <section class="section">
@@ -251,7 +252,11 @@
       const config = structuredClone(savedConfig || {});
       config.output = { ...(config.output || {}), path:$('output-path').value.trim(), orientation:$('orientation').value };
       config.cache = { ...(config.cache || {}), data_path:$('cache-path').value.trim() };
-      config.market = { ...(config.market || {}), symbols:$('symbols').value.split(/\r?\n|,/).map(v => v.trim()).filter(Boolean) };
+      config.market = {
+        ...(config.market || {}),
+        symbols:$('symbols').value.split(/\r?\n|,/).map(v => v.trim()).filter(Boolean),
+        custom_symbols:JSON.parse($('custom-symbols').value || '{}'),
+      };
       config.weather = { ...(config.weather || {}), location:$('weather-location').value.trim(), latitude:numberOrNull($('latitude').value), longitude:numberOrNull($('longitude').value) };
       config.codex = { ...(config.codex || {}), token:bareToken($('token').value), usage_url:$('usage-url').value.trim(), timeout_seconds:Number($('timeout').value) };
       config.schedule = { ...(config.schedule || {}), enabled:$('schedule-enabled').checked, cron:$('cron').value.trim(), timezone:$('timezone').value.trim() };
@@ -264,6 +269,7 @@
       $('output-path').value = config.output.path;
       $('cache-path').value = config.cache.data_path;
       $('symbols').value = (config.market.symbols || []).join('\n');
+      $('custom-symbols').value = JSON.stringify(config.market.custom_symbols || {}, null, 2);
       $('weather-location').value = config.weather.location || '';
       $('latitude').value = config.weather.latitude ?? '';
       $('longitude').value = config.weather.longitude ?? '';
@@ -313,11 +319,18 @@
 
     function setDirty() {
       if (!savedConfig) return;
-      const dirty = fingerprint(readForm()) !== savedFingerprint;
-      saveButton.disabled = !dirty;
-      resetButton.disabled = !dirty;
-      message.textContent = '';
-      message.className = '';
+      try {
+        const dirty = fingerprint(readForm()) !== savedFingerprint;
+        saveButton.disabled = !dirty;
+        resetButton.disabled = !dirty;
+        message.textContent = '';
+        message.className = '';
+      } catch (_) {
+        saveButton.disabled = false;
+        resetButton.disabled = false;
+        message.textContent = '自定义接口必须是有效的 JSON。';
+        message.className = 'error';
+      }
       renderTokenInfo(decodeToken($('token').value));
     }
 

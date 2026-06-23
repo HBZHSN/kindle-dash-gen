@@ -5,9 +5,10 @@ import math
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, time as dtime, timezone
+from datetime import date, datetime, timedelta, time as dtime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 import yfinance as yf
@@ -25,7 +26,7 @@ class MarketQuote:
     price: str
     change: str
     status: str = "OK"
-    intraday: list[float] = field(default_factory=list)
+    intraday: list[float | None] = field(default_factory=list)
     is_closed: bool = False
     trading_progress: float = 1.0
     delay_minutes: int = 0
@@ -290,10 +291,181 @@ def _fetch_single_quote(symbol: str, denoise: bool = False) -> MarketQuote:
         return quote
 
 
-def _fetch_market_quote(spec: str, denoise_symbols: set[str] | None = None) -> MarketQuote:
+def _custom_sessions(config: dict[str, Any]) -> list[tuple[dtime, dtime]]:
+    sessions: list[tuple[dtime, dtime]] = []
+    for value in config.get("sessions") or ["09:00-11:30", "13:00-15:00"]:
+        start, end = str(value).split("-", 1)
+        sessions.append((dtime.fromisoformat(start), dtime.fromisoformat(end)))
+    return sessions
+
+
+def _custom_trading_progress(
+    quote_date: date,
+    sessions: list[tuple[dtime, dtime]],
+    now: datetime,
+) -> float:
+    if quote_date < now.date():
+        return 1.0
+    total = sum(
+        (datetime.combine(quote_date, end) - datetime.combine(quote_date, start)).total_seconds()
+        for start, end in sessions
+    )
+    if total <= 0:
+        return 1.0
+    elapsed = 0.0
+    current = now.timetz().replace(tzinfo=None)
+    for start, end in sessions:
+        duration = (
+            datetime.combine(quote_date, end) - datetime.combine(quote_date, start)
+        ).total_seconds()
+        if current >= end:
+            elapsed += duration
+        elif current > start:
+            elapsed += (
+                datetime.combine(quote_date, current) - datetime.combine(quote_date, start)
+            ).total_seconds()
+    return max(0.0, min(1.0, elapsed / total))
+
+
+def _custom_minute_returns(
+    rows: list[tuple[dict[str, Any], float]],
+    quote_date: date,
+    sessions: list[tuple[dtime, dtime]],
+    now: datetime,
+) -> list[float | None]:
+    by_minute: dict[dtime, float] = {}
+    for row, value in rows:
+        try:
+            timestamp = dtime.fromisoformat(str(row["Time"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        minute = timestamp.replace(second=0, microsecond=0)
+        if any(start <= minute < end for start, end in sessions):
+            # Rows are chronological; the last observation in each minute wins.
+            by_minute[minute] = round(value * 100, 4)
+
+    current_time = now.timetz().replace(tzinfo=None)
+    historical = quote_date < now.date()
+    values: list[float | None] = []
+    for start, end in sessions:
+        cursor = datetime.combine(quote_date, start)
+        session_end = datetime.combine(quote_date, end)
+        while cursor < session_end:
+            minute = cursor.time()
+            if not historical and minute > current_time:
+                break
+            values.append(by_minute.get(minute))
+            cursor += timedelta(minutes=1)
+    return values
+
+
+def _fetch_custom_quote(
+    symbol: str,
+    config: dict[str, Any],
+    denoise: bool = False,
+    now: datetime | None = None,
+) -> MarketQuote:
+    try:
+        zone = ZoneInfo(str(config.get("timezone") or "Asia/Shanghai"))
+        current = now.astimezone(zone) if now else datetime.now(zone)
+        sessions = _custom_sessions(config)
+        session = requests.Session()
+        session.trust_env = False
+        payload: dict[str, Any] | None = None
+        quote_date: date | None = None
+        for days_back in range(int(config.get("lookback_days", 30)) + 1):
+            candidate = current.date() - timedelta(days=days_back)
+            response = session.get(
+                str(config["url"]),
+                params={"product": config["product"], "date": candidate.strftime("%Y%m%d")},
+                timeout=int(config.get("timeout_seconds", 10)),
+            )
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            candidate_payload = response.json()
+            rows = candidate_payload.get("data") if isinstance(candidate_payload, dict) else None
+            if isinstance(rows, list) and rows:
+                payload = candidate_payload
+                quote_date = candidate
+                break
+        if payload is None or quote_date is None:
+            raise ValueError("no custom market data within lookback window")
+
+        valid_rows: list[tuple[dict[str, Any], float]] = []
+        for row in payload["data"]:
+            if not isinstance(row, dict):
+                continue
+            try:
+                value = float(row["Return"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                valid_rows.append((row, value))
+        if not valid_rows:
+            raise ValueError("custom market data has no valid Return values")
+
+        last_row, last_return = valid_rows[-1]
+        exposure = float(last_row["Exposure"])
+        if not math.isfinite(exposure):
+            raise ValueError("custom market data has invalid Exposure")
+        is_closed = quote_date < current.date() or current.timetz().replace(tzinfo=None) >= sessions[-1][1]
+        delay_minutes = 0
+        if not is_closed:
+            try:
+                quoted_at = datetime.combine(
+                    quote_date,
+                    dtime.fromisoformat(str(last_row["Time"])),
+                    tzinfo=zone,
+                )
+                delay = round((current - quoted_at).total_seconds() / 60)
+                delay_minutes = delay if delay >= 2 else 0
+            except (KeyError, TypeError, ValueError):
+                pass
+        quote = MarketQuote(
+            symbol=ascii_text(symbol, "SYM"),
+            price=f"{exposure * 100:.0f}%",
+            change=f"{last_return * 100:+.2f}%",
+            intraday=_custom_minute_returns(valid_rows, quote_date, sessions, current),
+            is_closed=is_closed,
+            trading_progress=1.0 if is_closed else _custom_trading_progress(quote_date, sessions, current),
+            delay_minutes=delay_minutes,
+        )
+        logger.info(
+            "Custom market quote fetched: symbol=%s date=%s price=%s change=%s intraday_points=%d closed=%s",
+            quote.symbol,
+            quote_date.isoformat(),
+            quote.price,
+            quote.change,
+            len(quote.intraday),
+            quote.is_closed,
+        )
+        return quote
+    except Exception as exc:
+        quote = MarketQuote(
+            symbol=ascii_text(symbol, "SYM"),
+            price="--",
+            change="--",
+            status=ascii_text(exc, "Failed"),
+        )
+        logger.warning("Custom market quote failed: symbol=%s error=%s", quote.symbol, quote.status)
+        return quote
+
+
+def _fetch_market_quote(
+    spec: str,
+    denoise_symbols: set[str] | None = None,
+    custom_symbols: dict[str, dict[str, Any]] | None = None,
+) -> MarketQuote:
     denoise_symbols = denoise_symbols or set()
+    custom_symbols = custom_symbols or {}
     primary, fallback = parse_symbol_spec(spec)
-    quote = _fetch_single_quote(primary, primary in denoise_symbols)
+    fetch_primary = _fetch_custom_quote if primary in custom_symbols else _fetch_single_quote
+    quote = (
+        fetch_primary(primary, custom_symbols[primary], primary in denoise_symbols)
+        if primary in custom_symbols
+        else fetch_primary(primary, primary in denoise_symbols)
+    )
     if not fallback:
         return quote
 
@@ -302,7 +474,12 @@ def _fetch_market_quote(spec: str, denoise_symbols: set[str] | None = None) -> M
     if quote.status == "OK" and not quote.is_closed:
         return quote
 
-    fallback_quote = _fetch_single_quote(fallback, fallback in denoise_symbols)
+    fetch_fallback = _fetch_custom_quote if fallback in custom_symbols else _fetch_single_quote
+    fallback_quote = (
+        fetch_fallback(fallback, custom_symbols[fallback], fallback in denoise_symbols)
+        if fallback in custom_symbols
+        else fetch_fallback(fallback, fallback in denoise_symbols)
+    )
     if fallback_quote.status == "OK":
         # When the primary market is closed we keep showing the fallback (e.g.
         # futures) as the main quote, and add the primary's price/change as a
@@ -330,7 +507,9 @@ def _prev_close_from_info(symbol: str, fallback: float) -> float:
 
 
 def fetch_market_quotes(
-    symbols: list[str], denoise_symbols: list[str] | None = None
+    symbols: list[str],
+    denoise_symbols: list[str] | None = None,
+    custom_symbols: dict[str, dict[str, Any]] | None = None,
 ) -> list[MarketQuote]:
     if not symbols:
         return []
@@ -346,7 +525,7 @@ def fetch_market_quotes(
 
     quotes: list[MarketQuote] = []
     for symbol in symbols:
-        quotes.append(_fetch_market_quote(symbol, denoise_set))
+        quotes.append(_fetch_market_quote(symbol, denoise_set, custom_symbols))
     logger.info(
         "Market quotes complete: total=%d ok=%d failed=%d",
         len(quotes),

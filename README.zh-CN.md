@@ -32,7 +32,8 @@ Copy-Item config.example.yaml config.yaml
 
 运行前编辑 `config.yaml`：
 
-- `market.symbols`：要显示的 yfinance 代码。使用 `PRIMARY(FALLBACK)`（例如 `^NDX(NQ=F)`）可在主市场开盘时显示主代码，收盘后切换到备用代码；此时已收盘的主代码价格与涨跌幅会显示在第二行。
+- `market.symbols`：要显示的 yfinance 或自定义代码。使用 `PRIMARY(FALLBACK)`（例如 `^NDX(NQ=F)`）可在主市场开盘时显示主代码，收盘后切换到备用代码；此时已收盘的主代码价格与涨跌幅会显示在第二行。
+- `market.custom_symbols`：按显示代码配置自定义接口。接口的最新 `Exposure` 显示为仓位百分比，`Return` 显示为涨跌幅并按分钟绘制盘中曲线；缺失分钟由相邻点直线连接。请求显式忽略系统代理。若当天无数据，会按 `lookback_days` 逐日前溯。
 - `weather.location`：城市名，或设置 `latitude` 与 `longitude`
 - `codex.token`：用于 Codex 用量查询的 ChatGPT bearer token
 - `schedule.cron`：渲染计划，例如 `*/15 * * * *`
@@ -80,7 +81,7 @@ http://<your-lan-ip>:5678/settings
 
 ## 数据行为
 
-- 行情数据使用 `yfinance`。
+- 行情数据默认使用 `yfinance`，`market.custom_symbols` 中的代码使用对应自定义接口。
 - 行情报价以文本形式分两列渲染，最多 16 个代码。
 - 天气使用 Open-Meteo，无需 API key。
 - Codex 用量调用 `https://chatgpt.com/backend-api/wham/usage`，并附带 `codex.token`。

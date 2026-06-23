@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 import tempfile
 import threading
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from apscheduler.triggers.cron import CronTrigger
@@ -35,6 +37,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "GC=F",
         ],
         "denoise_symbols": [],
+        "custom_symbols": {},
     },
     "weather": {"location": "Shanghai", "latitude": None, "longitude": None},
     "codex": {
@@ -171,6 +174,60 @@ def validate_config(value: object) -> dict[str, Any]:
         if normalized not in normalized_denoise:
             normalized_denoise.append(normalized)
     market["denoise_symbols"] = normalized_denoise
+
+    custom_symbols = market.get("custom_symbols", {})
+    if not isinstance(custom_symbols, dict):
+        raise ValueError("market.custom_symbols must contain a mapping")
+    normalized_custom: dict[str, dict[str, Any]] = {}
+    for raw_symbol, raw_source in custom_symbols.items():
+        symbol = _string(raw_symbol, "market.custom_symbols key")
+        if not isinstance(raw_source, dict):
+            raise ValueError(f"market.custom_symbols.{symbol} must contain a mapping")
+        source = deepcopy(raw_source)
+        source["url"] = _string(source.get("url"), f"market.custom_symbols.{symbol}.url")
+        if not source["url"].startswith(("http://", "https://")):
+            raise ValueError(f"market.custom_symbols.{symbol}.url must be an HTTP or HTTPS URL")
+        source["product"] = _string(source.get("product"), f"market.custom_symbols.{symbol}.product")
+        source["timeout_seconds"] = _integer(
+            source.get("timeout_seconds", 10),
+            f"market.custom_symbols.{symbol}.timeout_seconds",
+            1,
+            120,
+        )
+        source["lookback_days"] = _integer(
+            source.get("lookback_days", 30),
+            f"market.custom_symbols.{symbol}.lookback_days",
+            0,
+            366,
+        )
+        source["timezone"] = _string(
+            source.get("timezone", "Asia/Shanghai"),
+            f"market.custom_symbols.{symbol}.timezone",
+        )
+        try:
+            ZoneInfo(source["timezone"])
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"market.custom_symbols.{symbol}.timezone is invalid") from exc
+        sessions = source.get("sessions", ["09:00-11:30", "13:00-15:00"])
+        if not isinstance(sessions, list) or not sessions:
+            raise ValueError(f"market.custom_symbols.{symbol}.sessions must be a non-empty list")
+        normalized_sessions: list[str] = []
+        for index, session in enumerate(sessions):
+            value = _string(session, f"market.custom_symbols.{symbol}.sessions[{index}]")
+            try:
+                start, end = value.split("-", 1)
+                start_time = datetime.strptime(start, "%H:%M").time()
+                end_time = datetime.strptime(end, "%H:%M").time()
+            except ValueError as exc:
+                raise ValueError(
+                    f"market.custom_symbols.{symbol}.sessions[{index}] must look like HH:MM-HH:MM"
+                ) from exc
+            if start_time >= end_time:
+                raise ValueError(f"market.custom_symbols.{symbol}.sessions[{index}] must end after it starts")
+            normalized_sessions.append(f"{start_time:%H:%M}-{end_time:%H:%M}")
+        source["sessions"] = normalized_sessions
+        normalized_custom[symbol] = source
+    market["custom_symbols"] = normalized_custom
 
     weather = config["weather"]
     weather["location"] = _string(weather.get("location"), "weather.location", allow_empty=True)

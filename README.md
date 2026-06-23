@@ -34,7 +34,8 @@ Copy-Item config.example.yaml config.yaml
 
 Edit `config.yaml` before running:
 
-- `market.symbols`: yfinance symbols to display. Use `PRIMARY(FALLBACK)` (for example `^NDX(NQ=F)`) to show the primary while its market is open and switch to the fallback once it closes; the closed primary's price and change are then shown on a second line.
+- `market.symbols`: yfinance or custom symbols to display. Use `PRIMARY(FALLBACK)` (for example `^NDX(NQ=F)`) to show the primary while its market is open and switch to the fallback once it closes; the closed primary's price and change are then shown on a second line.
+- `market.custom_symbols`: custom HTTP sources keyed by display symbol. Returns are sampled once per trading minute, with missing minutes connected by straight segments. Requests bypass environment proxies and walk backward up to `lookback_days` when a date has no data.
 - `weather.location`: city name, or set `latitude` and `longitude`
 - `codex.token`: ChatGPT bearer token for Codex usage
 - `schedule.cron`: render schedule, for example `*/15 * * * *`

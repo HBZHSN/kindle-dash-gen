@@ -16,6 +16,7 @@ schedule:
 
 market:
   symbols:
+    - "JC1.LW"
     - "600519.SS"
     - "000001.SZ"
     - "AAPL"
@@ -26,6 +27,16 @@ market:
     - "GC=F"
   denoise_symbols:  # only these symbols get glitch/outlier bars dropped from the curve
     - "GC=F"
+  custom_symbols:
+    JC1.LW:
+      url: "http://100.89.106.48:8110/api/data"
+      product: "jc1"
+      timeout_seconds: 10
+      lookback_days: 30
+      timezone: "Asia/Shanghai"
+      sessions:
+        - "09:00-11:30"
+        - "13:00-15:00"
 
 weather:
   location: "Shanghai"
